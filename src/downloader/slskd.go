@@ -445,6 +445,11 @@ func parsePath(p string) (string, string) { // parse filepath to downloaded form
 }
 
 func wildcardArtist(artist string) string {
+	prefix := ""
+	if len(artist) >= 4 && strings.EqualFold(artist[:4], "the ") {
+		prefix = artist[:4]
+		artist = strings.TrimSpace(artist[4:])
+}
     r := []rune(strings.TrimSpace(artist))
 
     if len(r) < 3 {
@@ -452,7 +457,7 @@ func wildcardArtist(artist string) string {
     }
 
     r[0] = '*'
-    return string(r)
+    return prefix + string(r)
 }
 
 // different failure states slskd has (format is "Completed,Rejected", "Errored,Cancelled" etc..)
