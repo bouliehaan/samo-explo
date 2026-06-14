@@ -89,7 +89,7 @@ func (c *DownloadClient) MonitorDownloads(tracks []*models.Track, m Monitor) err
 				track.File, path = parsePath(track.File)
 				if monCfg.MigrateDownload {
 					if err = c.MoveDownload(monCfg.FromDir, monCfg.ToDir, path, track); err != nil {
-						return fmt.Errorf("error while moving file: %w", err)
+						slog.Error("error while moving file", "err", err.Error())
 					} else {
 						slog.Info("track moved successfully", "service", monCfg.Service)
 					}
