@@ -11,6 +11,9 @@ echo "[setup] Web UI available at http://localhost:${WEB_ADDR##*:}"
 
 echo "[setup] Initializing cron jobs..."
 
+# Start with a clean crontab
+: > /etc/crontabs/root
+
 # Load *_SCHEDULE and *_FLAGS from .env if not already set in the environment.
 # This allows the web UI to configure schedules by writing to the .env file.
 _cfg="${WEB_ENV_PATH:-/opt/explo/.env}"
