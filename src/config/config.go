@@ -38,8 +38,9 @@ type Flags struct {
 	ExcludeLocal bool
 	Persist      bool
 	PersistSet   bool
-	SearchMBID   string
-	RefreshOnly  bool
+	SearchMBID     string
+	RefreshOnly    bool
+	CleanDownloads bool
 }
 
 type ServerConfig struct {

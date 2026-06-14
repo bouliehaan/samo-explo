@@ -231,6 +231,24 @@ export async function saveEnrichMetadata(enabled) {
   if (!res.ok) throw new Error(await res.text())
 }
 
+export async function savePersist(enabled) {
+  const res = await apiFetch('/api/ui/config/persist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+}
+
+export async function saveCleanDownloads(enabled) {
+  const res = await apiFetch('/api/ui/config/clean-downloads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+}
+
 export async function fetchBackgroundArt() {
   try {
     const res = await fetch('/api/ui/background-art')

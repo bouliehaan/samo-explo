@@ -245,6 +245,8 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/api/ui/config/schedules", s.authStore.RequireAuth(http.HandlerFunc(s.handleSaveSchedule)))
 	s.mux.Handle("/api/ui/config/path-template", s.authStore.RequireAuth(http.HandlerFunc(s.handleSavePathTemplate)))
 	s.mux.Handle("/api/ui/config/enrich-metadata", s.authStore.RequireAuth(http.HandlerFunc(s.handleSaveEnrichMetadata)))
+	s.mux.Handle("/api/ui/config/persist", s.authStore.RequireAuth(http.HandlerFunc(s.handleSavePersist)))
+	s.mux.Handle("/api/ui/config/clean-downloads", s.authStore.RequireAuth(http.HandlerFunc(s.handleSaveCleanDownloads)))
 
 	// Path template presets: GET list, POST add; DELETE per name under prefix
 	s.mux.HandleFunc("/api/ui/path-templates", func(w http.ResponseWriter, r *http.Request) {
@@ -555,6 +557,20 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Carry over --persist=false / --clean-downloads if globally set
+	data, _ := os.ReadFile(s.cfg.WebEnvPath)
+	for k, v := range parseEnvText(string(data)) {
+		if strings.HasSuffix(k, "_FLAGS") && v != "" {
+			if strings.Contains(v, "--persist=false") {
+				defaultFlags = addFlag(defaultFlags, "--persist=false")
+			}
+			if strings.Contains(v, "--clean-downloads") {
+				defaultFlags = addFlag(defaultFlags, "--clean-downloads")
+			}
+			break
+		}
+	}
+
 	updates := map[string]string{}
 	if !body.Enabled {
 		// Toggle off — truly disable, regardless of day value carried over from state
@@ -625,6 +641,91 @@ func (s *Server) handleSaveEnrichMetadata(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleSavePersist toggles persist by injecting/removing --persist=false
+// from every active *_FLAGS entry, which is what start.sh feeds to the CLI.
+func (s *Server) handleSavePersist(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.toggleFlagInEnv(!body.Enabled, "--persist=false"); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Clean up the deprecated PERSIST env var if present
+	data, _ := os.ReadFile(s.cfg.WebEnvPath)
+	if _, ok := parseEnvText(string(data))["PERSIST"]; ok {
+		_ = updateEnvKeys(s.cfg.WebEnvPath, map[string]string{"PERSIST": ""}, web.SampleEnv)
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleSaveCleanDownloads toggles --clean-downloads in every active *_FLAGS entry.
+func (s *Server) handleSaveCleanDownloads(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.toggleFlagInEnv(body.Enabled, "--clean-downloads"); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// toggleFlagInEnv adds or removes a CLI flag from every active *_FLAGS entry.
+func (s *Server) toggleFlagInEnv(add bool, flag string) error {
+	data, _ := os.ReadFile(s.cfg.WebEnvPath)
+	env := parseEnvText(string(data))
+	updates := map[string]string{}
+	for k, v := range env {
+		if !strings.HasSuffix(k, "_FLAGS") || v == "" {
+			continue
+		}
+		var updated string
+		if add {
+			updated = addFlag(v, flag)
+		} else {
+			updated = removeFlag(v, flag)
+		}
+		if updated != v {
+			updates[k] = updated
+		}
+	}
+	return updateEnvKeys(s.cfg.WebEnvPath, updates, web.SampleEnv)
+}
+
+func addFlag(flags, flag string) string {
+	if strings.Contains(flags, flag) {
+		return flags
+	}
+	return strings.TrimSpace(flags + " " + flag)
+}
+
+func removeFlag(flags, flag string) string {
+	f := strings.ReplaceAll(flags, flag, "")
+	for strings.Contains(f, "  ") {
+		f = strings.ReplaceAll(f, "  ", " ")
+	}
+	return strings.TrimSpace(f)
 }
 
 // updateEnvKeys reads the env file (falling back to fallback if missing), updates the
