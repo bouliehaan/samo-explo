@@ -15,6 +15,7 @@ import {
   fetchConfig, fetchConfigRaw, saveConfig, resetConfig,
   saveSchedule, startRun, stopRun, fetchRunStatus, fetchLogs,
   fetchCustomPlaylists, deleteCustomPlaylist, savePathTemplate, saveEnrichMetadata,
+  savePersist, saveCleanDownloads,
   fetchPathTemplatePresets, addPathTemplatePreset, deletePathTemplatePreset,
 } from '../lib/api'
 import { parseSlogLine, cronToFields, highlightEnv } from '../lib/utils'
@@ -223,6 +224,7 @@ function HomeSection() {
     ]).then(([{ values, sources }, customList]) => {
       setEnvSources(sources || {})
       setLbUser(values.LISTENBRAINZ_USER || '')
+      setNoPersist((values.WEEKLY_EXPLORATION_FLAGS || values.WEEKLY_JAMS_FLAGS || values.DAILY_JAMS_FLAGS || values.ON_REPEAT_FLAGS || '').includes('--persist=false'))
       setCustomPlaylists(customList)
 
       const s = {}
@@ -512,6 +514,8 @@ function DownloadPathSection() {
   const [showModal, setShowModal] = useState(false)
   const [openMenuIdx, setOpenMenuIdx] = useState(null)
   const [enrichEnabled, setEnrichEnabled] = useState(false)
+  const [replacePlaylist, setReplacePlaylist] = useState(true)
+  const [cleanDownloads, setCleanDownloads] = useState(false)
   const [templateEnabled, setTemplateEnabled] = useState(false)
 
   useEffect(() => {
@@ -524,6 +528,9 @@ function DownloadPathSection() {
         ...jsonPresets,
       ]
       setEnrichEnabled(values.ENRICH_TRACK_METADATA === 'true')
+      const anyFlags = values.WEEKLY_EXPLORATION_FLAGS || values.WEEKLY_JAMS_FLAGS || values.DAILY_JAMS_FLAGS || values.ON_REPEAT_FLAGS || ''
+      setReplacePlaylist(anyFlags.includes('--persist=false'))
+      setCleanDownloads(anyFlags.includes('--clean-downloads'))
       const t = values.PATH_TEMPLATE || ''
       if (t) {
         setTemplateEnabled(true)
@@ -549,6 +556,18 @@ function DownloadPathSection() {
     const next = !enrichEnabled
     setEnrichEnabled(next)
     try { await saveEnrichMetadata(next) } catch { setEnrichEnabled(!next) }
+  }
+
+  const handleReplaceToggle = async () => {
+    const next = !replacePlaylist
+    setReplacePlaylist(next)
+    try { await savePersist(!next) } catch { setReplacePlaylist(!next) }
+  }
+
+  const handleCleanToggle = async () => {
+    const next = !cleanDownloads
+    setCleanDownloads(next)
+    try { await saveCleanDownloads(next) } catch { setCleanDownloads(!next) }
   }
 
   const handleTemplateToggle = async () => {
@@ -633,6 +652,38 @@ function DownloadPathSection() {
           className={`relative inline-flex h-[22px] w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${enrichEnabled ? 'bg-accent' : 'bg-[#383838]'}`}
         >
           <span className={`inline-block h-[18px] w-[18px] my-[2px] rounded-full bg-white shadow transition-transform duration-200 ${enrichEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} />
+        </button>
+      </div>
+
+      {/* Replace playlist toggle */}
+      <div className="flex items-start justify-between mt-3 mb-1 gap-4">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[13px] text-white">Update playlist in place</span>
+          <span className="text-[11px] text-muted">Keep a single playlist per type and refresh it with new recommendations each run. When off, a new playlist is created every time and previous ones are kept.</span>
+        </div>
+        <button
+          role="switch"
+          aria-checked={replacePlaylist}
+          onClick={handleReplaceToggle}
+          className={`relative inline-flex h-[22px] w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${replacePlaylist ? 'bg-accent' : 'bg-[#383838]'}`}
+        >
+          <span className={`inline-block h-[18px] w-[18px] my-[2px] rounded-full bg-white shadow transition-transform duration-200 ${replacePlaylist ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} />
+        </button>
+      </div>
+
+      {/* Clean old downloads toggle */}
+      <div className="flex items-start justify-between mt-3 mb-1 gap-4">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[13px] text-white">Clean old downloads</span>
+          <span className="text-[11px] text-muted">Remove previously downloaded tracks before each run. Only affects Explo's download folder, not your main library.</span>
+        </div>
+        <button
+          role="switch"
+          aria-checked={cleanDownloads}
+          onClick={handleCleanToggle}
+          className={`relative inline-flex h-[22px] w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${cleanDownloads ? 'bg-accent' : 'bg-[#383838]'}`}
+        >
+          <span className={`inline-block h-[18px] w-[18px] my-[2px] rounded-full bg-white shadow transition-transform duration-200 ${cleanDownloads ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} />
         </button>
       </div>
 

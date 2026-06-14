@@ -199,9 +199,9 @@ func main() {
 		if err != nil {
 			slog.Warn(err.Error(), "notify", true)
 		}
-		if cfg.DownloadCfg.UseSubDir {
-			downloader.DeleteSongs()
-		}
+	}
+	if cfg.Flags.CleanDownloads && cfg.DownloadCfg.UseSubDir {
+		downloader.DeleteSongs()
 	}
 	if cfg.Flags.DownloadMode != "force" {
 		if err := client.CheckTracks(tracks); err != nil { // Check if tracks exist on system before downloading
