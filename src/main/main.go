@@ -138,13 +138,22 @@ func main() {
 		return
 	}
 
+	if cfg.Flags.RefreshOnly {
+		if err := client.TriggerRefresh(&cfg); err != nil {
+			slog.Error("refresh-only failed", "err", err.Error())
+			os.Exit(1)
+		}
+		slog.Info("library refresh triggered")
+		return
+	}
+
 	slog.Info("Starting Explo...")
 
 	if err := os.MkdirAll(cfg.DownloadCfg.Youtube.CoversDir, 0755); err != nil {
 		slog.Error("failed making directory", "msg", err.Error())
 	}
 
-	if cfg.ServerCfg.Enabled {
+	if cfg.ServerCfg.Enabled || !cfg.Flags.PlaylistSet {
 
 		exploPath, err := os.Executable()
 		if err != nil {
@@ -154,15 +163,6 @@ func main() {
 		cfg.ServerCfg.ExploPath = exploPath
 		srv := backend.NewServer(cfg.ServerCfg)
 		log.Fatal(srv.Start())
-	}
-
-	if cfg.Flags.RefreshOnly {
-		if err := client.TriggerRefresh(&cfg); err != nil {
-			slog.Error("refresh-only failed", "err", err.Error())
-			os.Exit(1)
-		}
-		slog.Info("library refresh triggered")
-		return
 	}
 
 	var tracks []*models.Track

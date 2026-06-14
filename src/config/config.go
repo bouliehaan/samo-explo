@@ -34,6 +34,7 @@ type Flags struct {
 	CfgPath      string
 	CfgSet       bool
 	Playlist     string
+	PlaylistSet	 bool
 	DownloadMode string
 	ExcludeLocal bool
 	Persist      bool
