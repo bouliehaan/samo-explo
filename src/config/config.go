@@ -257,11 +257,11 @@ func (cfg *Config) HandleDeprecation() { //
 		slog.Warn("'DEBUG' variable is deprecated, please use LOG_LEVEL=DEBUG instead")
 		cfg.LogLevel = "DEBUG"
 	}
-	if !cfg.PersistENV {
-		slog.Warn("'PERSIST' variable is deprecated, use --persist flag instead")
+	if cfg.Flags.PersistSet {
+		slog.Warn("--persist flag now only handles playlist deletion, use toggle in UI or --clean-downloads to delete tracks")
 	}
 
-	if !cfg.Persist && !cfg.DownloadCfg.UseSubDir {
+	if cfg.Flags.CleanDownloads && !cfg.DownloadCfg.UseSubDir {
 		slog.Warn("Deleting tracks requires 'USE_SUBDIRECTORY' to be true")
 	}
 }
