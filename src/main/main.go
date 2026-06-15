@@ -153,7 +153,7 @@ func main() {
 		slog.Error("failed making directory", "msg", err.Error())
 	}
 
-	if cfg.ServerCfg.Enabled || !cfg.Flags.PlaylistSet {
+	if cfg.ServerCfg.Enabled && !cfg.Flags.PlaylistSet {
 
 		exploPath, err := os.Executable()
 		if err != nil {
