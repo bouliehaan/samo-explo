@@ -141,9 +141,27 @@ func (c *Subsonic) SearchSongs(tracks []*models.Track) error {
 		}
 
 		songs := resp.SubsonicResponse.SearchResult3.Song
+
 		if len(songs) == 0 {
-			slog.Debug(fmt.Sprintf("[subsonic] no results found for %s", searchQuery))
-			continue
+			if track.MusicBrainzTrackID != "" {
+				slog.Debug("[subsonic] using fallback MB TrackID search", "mbid", track.MusicBrainzTrackID)
+				reqParam := fmt.Sprintf("search3?query=%s&f=json", url.QueryEscape(track.MusicBrainzTrackID))
+				body, err = c.subsonicRequest(reqParam)
+				if err != nil {
+					return err
+				}
+
+				if err := util.ParseResp(body, &resp); err != nil {
+					return err
+				}
+
+				songs = resp.SubsonicResponse.SearchResult3.Song
+			}
+
+			if len(songs) == 0 {
+				slog.Debug(fmt.Sprintf("[subsonic] no results found for %s", searchQuery))
+				continue
+			}
 		}
 		normalizedCleanTitle := util.NormalizeTitle(track.CleanTitle)
 		for _, song := range songs {
@@ -170,7 +188,7 @@ func (c *Subsonic) SearchSongs(tracks []*models.Track) error {
 		}
 
 		if !track.Present {
-			slog.Debug(fmt.Sprintf("[subsonic] multiple results for %s but none matched criteria", searchQuery))
+			slog.Debug(fmt.Sprintf("[subsonic] no matching tracks for %s", searchQuery))
 		}
 	}
 	return nil
