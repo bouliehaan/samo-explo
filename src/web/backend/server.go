@@ -40,31 +40,6 @@ type ConfigResponse struct {
 	Sources map[string]string `json:"sources"` // "env" | "file"
 }
 
-/* // runEvent is an SSE event sent to connected browser clients.
-type runEvent struct {
-	typ  string
-	data string
-}
-
-// RunStatus is returned by GET /api/run/status.
-type RunStatus struct {
-	Running  bool `json:"running"`
-	ExitCode *int `json:"exit_code,omitempty"`
-}
-
-type manualRunState struct {
-	mu          sync.Mutex
-	running     bool
-	cancel      context.CancelFunc
-	exitCode    *int
-	logs        []string
-	subscribers map[chan runEvent]struct{}
-}
-
-func newManualRunState() manualRunState {
-	return manualRunState{subscribers: make(map[chan runEvent]struct{})}
-} */
-
 type Server struct {
 	cfg            config.ServerConfig
 	mux            *http.ServeMux
@@ -906,6 +881,7 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(dirs); err != nil {
 		slog.Warn("failed to encode directories to response", "err", err.Error())
 	}
+<<<<<<< HEAD
 }
 
 // ── Manual run ─────────────────────────────────────────────────────────────
@@ -1247,3 +1223,6 @@ func buildArgs(playlist, downloadMode string, noPersist, excludeLocal bool, WebE
 	}
 	return args
 }
+=======
+}
+>>>>>>> e957089 (remove functions from server.go)
