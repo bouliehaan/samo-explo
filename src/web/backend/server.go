@@ -1,25 +1,22 @@
 package backend
 
 import (
-	"bufio"
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
+	"os/exec"
 
 	"explo/src/config"
 	"explo/src/web"
+	"explo/src/web/backend/run"
 )
 
 // Option is a value/label pair for select-type fields.
@@ -43,7 +40,7 @@ type ConfigResponse struct {
 	Sources map[string]string `json:"sources"` // "env" | "file"
 }
 
-// runEvent is an SSE event sent to connected browser clients.
+/* // runEvent is an SSE event sent to connected browser clients.
 type runEvent struct {
 	typ  string
 	data string
@@ -66,7 +63,7 @@ type manualRunState struct {
 
 func newManualRunState() manualRunState {
 	return manualRunState{subscribers: make(map[chan runEvent]struct{})}
-}
+} */
 
 type Server struct {
 	cfg            config.ServerConfig
@@ -75,7 +72,7 @@ type Server struct {
 	authStore      *AuthStore
 	cronJobs       *Jobs
 	sessionManager *SessionManager
-	manualRun      manualRunState
+	manualRun      *run.ManualRun
 }
 
 func NewServer(cfg config.ServerConfig) *Server {
@@ -93,6 +90,7 @@ func NewServer(cfg config.ServerConfig) *Server {
 	)
 
 	cronJobs := NewJobs()
+	manualRun := run.NewManualRun(cfg.WebDataDir, cfg.WebEnvPath, cfg.ExploPath)
 
 	mux := http.NewServeMux()
 	s := &Server{
@@ -105,7 +103,7 @@ func NewServer(cfg config.ServerConfig) *Server {
 		authStore:      authStore,
 		cronJobs:       cronJobs,
 		sessionManager: sessionManager,
-		manualRun:      newManualRunState(),
+		manualRun:      manualRun,
 	}
 
 	s.registerRoutes()
@@ -155,6 +153,28 @@ func checkForUpdate() {
 	if newer {
 		slog.Info("new version available!", "latest", release.TagName, "current", config.Version)
 	}
+}
+
+// triggerLibraryRefresh spawns the CLI with --refresh-only in the background to
+// nudge the configured media server's library scan. Fire-and-forget: errors are
+// logged but do not block the caller.
+func (s *Server) triggerLibraryRefresh() {
+	go func() {
+		cmd := exec.Command(s.cfg.ExploPath, "--refresh-only", "--config", s.cfg.WebEnvPath)
+		env := make([]string, 0, len(os.Environ()))
+		for _, e := range os.Environ() {
+			if !strings.HasPrefix(e, "WEB_UI=") {
+				env = append(env, e)
+			}
+		}
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			slog.Warn("library refresh failed", "err", err.Error(), "output", string(out))
+			return
+		}
+		slog.Info("library refresh complete")
+	}()
 }
 
 func parseVer(v string) [3]int {
@@ -778,7 +798,7 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 
 // ── Manual run ─────────────────────────────────────────────────────────────
 
-var errRunAlreadyStarted = errors.New("run already in progress")
+/* var errRunAlreadyStarted = errors.New("run already in progress")
 
 // handleRun starts an explo run in the background. Clients follow output via /api/ui/run/events.
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
@@ -1093,7 +1113,7 @@ func (s *Server) unsubscribeRun(ch chan runEvent) {
 	s.manualRun.mu.Lock()
 	delete(s.manualRun.subscribers, ch)
 	s.manualRun.mu.Unlock()
-}
+} */
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

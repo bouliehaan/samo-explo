@@ -85,10 +85,10 @@ func (s *Server) registerPlaylistRoutes() {
 }
 
 func (s *Server) registerRunRoutes() {
-	s.mux.Handle("POST /api/ui/run", s.auth(s.handleRun))
-	s.mux.Handle("GET /api/ui/run/events", s.auth(s.handleRunEvents))
-	s.mux.Handle("POST /api/ui/run/stop", s.auth(s.handleStopRun))
-	s.mux.Handle("GET /api/ui/run/status", s.auth(s.handleRunStatus))
+	s.mux.Handle("POST /api/ui/run", s.auth(s.manualRun.HandleRun))
+	s.mux.Handle("GET /api/ui/run/events", s.auth(s.manualRun.HandleRunEvents))
+	s.mux.Handle("POST /api/ui/run/stop", s.auth(s.manualRun.HandleStopRun))
+	s.mux.Handle("GET /api/ui/run/status", s.auth(s.manualRun.HandleRunStatus))
 }
 
 func (s *Server) registerMiscRoutes() {
