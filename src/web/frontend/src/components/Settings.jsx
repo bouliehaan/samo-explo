@@ -211,8 +211,6 @@ function HomeSection() {
 
   const [playlist, setPlaylist] = useState('weekly-exploration')
   const [dlmode, setDlmode] = useState('normal')
-  const [noPersist, setNoPersist] = useState(false)
-  const [excludeLocal, setExcludeLocal] = useState(false)
 
   const [running, setRunning] = useState(false)
   const [status, setStatus] = useState('')
@@ -229,7 +227,6 @@ function HomeSection() {
     ]).then(([{ values, sources }, customList]) => {
       setEnvSources(sources || {})
       setLbUser(values.LISTENBRAINZ_USER || '')
-      setNoPersist((values.WEEKLY_EXPLORATION_FLAGS || values.WEEKLY_JAMS_FLAGS || values.DAILY_JAMS_FLAGS || values.ON_REPEAT_FLAGS || '').includes('--persist=false'))
       setCustomPlaylists(customList)
 
       const s = {}
@@ -337,7 +334,7 @@ function HomeSection() {
     setLogEntries([])
     setStatus('running…')
     try {
-      await startRun(playlist, dlmode, !noPersist, excludeLocal)
+      await startRun(playlist, dlmode)
       connect()
     } catch (e) {
       if (e.conflict) { setStatus('already running'); setRunning(false); return }
@@ -381,7 +378,7 @@ function HomeSection() {
             playlist={openTracklist}
             refreshTick={refreshTick}
             onRun={async () => {
-              await startRun(openTracklist, 'normal', true, false)
+              await startRun(openTracklist, 'normal')
               setRunning(true)
               setStatus('running…')
               setLogEntries([])
@@ -422,7 +419,7 @@ function HomeSection() {
           setShowImportModal(false)
         }}
         onSync={async (id) => {
-          await startRun(id, 'normal', true, false)
+          await startRun(id, 'normal')
           setRunning(true)
           setStatus('running…')
           setLogEntries([])
@@ -452,7 +449,7 @@ function HomeSection() {
               <button
                 key={m.value}
                 onClick={() => setDlmode(m.value)}
-                className={`px-3 py-1.5 text-[12px] rounded-[6px] border bg-surface cursor-pointer transition-colors
+                className={`px-3 py-1.5 text-[12px] rounded-[6px] border bg-well cursor-pointer transition-colors
                   ${dlmode === m.value ? 'border-accent text-accent' : 'border-ui-border text-muted hover:border-[#404040] hover:text-white'}`}
               >
                 {m.name}
@@ -470,12 +467,6 @@ function HomeSection() {
             {customPlaylists.length > 0 && <option disabled>---</option>}
             {customPlaylists.map(cp => <option key={cp.id} value={cp.id}>{cp.name}</option>)}
           </select>
-          <label className="flex items-center gap-1.5 text-[12px] text-muted cursor-pointer" title="When unchecked (default), previously generated playlists and their tracks are kept and added to over time. When checked, the playlist is wiped and rebuilt from scratch on each run.">
-            <input type="checkbox" checked={noPersist} onChange={e => setNoPersist(e.target.checked)} /> don't persist
-          </label>
-          <label className="flex items-center gap-1.5 text-[12px] text-muted cursor-pointer" title="When checked, tracks already found in your local library are excluded from the generated playlist.">
-            <input type="checkbox" checked={excludeLocal} onChange={e => setExcludeLocal(e.target.checked)} /> exclude local
-          </label>
         </div>
         <div className="flex gap-2.5 items-center">
           <Button onClick={handleRun} disabled={running}>▶ Run</Button>

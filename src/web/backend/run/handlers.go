@@ -15,9 +15,7 @@ func (mr *ManualRun) HandleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	args := buildArgs(r.FormValue("playlist"), r.FormValue("download_mode"),
-		r.FormValue("persist") == "false", r.FormValue("exclude_local") == "true",
-		mr.cfg.WebEnvPath)
+	args := buildArgs(r.FormValue("playlist"), r.FormValue("download_mode"), mr.cfg.WebEnvPath)
 
 	if err := mr.startRun(args); err != nil {
 		if errors.Is(err, errRunAlreadyStarted) {
