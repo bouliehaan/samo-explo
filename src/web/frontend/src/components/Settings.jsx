@@ -34,7 +34,7 @@ const tabBtnCls = active =>
 
 // ── Home Tab ──────────────────────────────────────────────────────────────────
 // Manages scheduled playlists, manual runs, and live run output.
-// Fetches its own config on mount to initialise schedule state and locked keys.
+// Fetches its own config on mount to initialise schedule state.
 
 // Streams live run output from /api/ui/run/events
 function useSSE({ onLine, onDone }) {
@@ -202,7 +202,6 @@ function CustomPlaylistsSection({
 
 function HomeSection() {
   const [schedules, setSchedules] = useState(null)
-  const [envSources, setEnvSources] = useState({})
   const [scheduleSaveStatus, setScheduleSaveStatus] = useState({})
   const [lbUser, setLbUser] = useState('')
   const [openTracklist, setOpenTracklist] = useState(null)
@@ -224,8 +223,7 @@ function HomeSection() {
     Promise.all([
       fetchConfig(),
       fetchCustomPlaylists().catch(() => [])
-    ]).then(([{ values, sources }, customList]) => {
-      setEnvSources(sources || {})
+    ]).then(([{ values }, customList]) => {
       setLbUser(values.LISTENBRAINZ_USER || '')
       setCustomPlaylists(customList)
 
@@ -277,11 +275,6 @@ function HomeSection() {
     return () => disconnect()
   }, [connect, disconnect])
 
-  const isScheduleLocked = id => {
-    const p = PLAYLISTS.find(p => p.value === id)
-    return p ? envSources[p.scheduleKey] === 'env' : false
-  }
-
   const nextRunText = id => {
     const s = schedules[id]
     if (!s?.enabled) return 'Disabled'
@@ -308,7 +301,6 @@ function HomeSection() {
         ...prev, [id]: { ...prev[id], editing: !prev[id].editing }
       })),
       onSave: () => {
-        if (isScheduleLocked(id)) return
         saveSchedule(id, s.enabled, s.day, s.hour, s.minute)
           .then(() => flashStatus(id, 'Saved.'))
           .catch(() => flashStatus(id, 'Error saving.'))
@@ -362,7 +354,6 @@ function HomeSection() {
               key={p.value}
               playlist={p}
               {...scheduleProps(p.value)}
-              locked={isScheduleLocked(p.value)}
               fixedSchedule={!!p.fixedSchedule}
               index={i}
               nextRunText={nextRunText(p.value)}

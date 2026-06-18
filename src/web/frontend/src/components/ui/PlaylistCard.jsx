@@ -358,7 +358,6 @@ const NOISE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'
 export function PlaylistCard({
   playlist,
   schedule: s,
-  locked,
   fixedSchedule = false,
   index = 0,
   nextRunText,
@@ -446,7 +445,7 @@ export function PlaylistCard({
   const [copyLabel, setCopyLabel] = useState('Copy URL')
   const [cardHovered, setCardHovered] = useState(false)
   const menuBtnRef = useRef(null)
-  const canEdit = !locked && !fixedSchedule && !!onToggleEdit
+  const canEdit = !fixedSchedule && !!onToggleEdit
   const hasMenu = canEdit || !!onDelete || !!sourceUrl
 
   useEffect(() => {
@@ -601,25 +600,16 @@ export function PlaylistCard({
 
         {/* Toggle — bottom right */}
         {onToggle && (
-          <>
-            <label
-              onClick={e => e.stopPropagation()}
-              style={{
-                position: 'absolute', bottom: 8, right: 8,
-                display: 'flex', alignItems: 'center',
-                cursor: locked ? 'not-allowed' : 'pointer',
-                opacity: locked ? 0.5 : 1,
-              }}
-            >
-              <Toggle checked={s.enabled} onChange={onToggle} disabled={locked} tiny />
-            </label>
-            {locked && (
-              <span style={{
-                position: 'absolute', bottom: 10, right: 30,
-                fontSize: 7, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.3)',
-              }}>ENV</span>
-            )}
-          </>
+          <label
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'absolute', bottom: 8, right: 8,
+              display: 'flex', alignItems: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <Toggle checked={s.enabled} onChange={onToggle} tiny />
+          </label>
         )}
       </div>
 
@@ -748,7 +738,7 @@ export function PlaylistCard({
       </AnimatePresence>
 
       {/* Inline schedule editor */}
-      {!locked && !fixedSchedule && (
+      {!fixedSchedule && (
         <ScheduleEditor
           schedule={s}
           onSave={onSave}
