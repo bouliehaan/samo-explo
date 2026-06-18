@@ -557,13 +557,10 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Carry over --replace=false / --clean-downloads if globally set
+	// Carry over --clean-downloads if globally set
 	data, _ := os.ReadFile(s.cfg.WebEnvPath)
 	for k, v := range parseEnvText(string(data)) {
 		if strings.HasSuffix(k, "_FLAGS") && v != "" {
-			if strings.Contains(v, "--replace=false") {
-				defaultFlags = addFlag(defaultFlags, "--replace=false")
-			}
 			if strings.Contains(v, "--clean-downloads") {
 				defaultFlags = addFlag(defaultFlags, "--clean-downloads")
 			}
@@ -643,8 +640,7 @@ func (s *Server) handleSaveEnrichMetadata(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleSaveReplacePlaylist toggles replace by injecting/removing --replace=false
-// from every active *_FLAGS entry, which is what start.sh feeds to the CLI.
+// handleSaveReplacePlaylist writes REPLACE_PLAYLIST=true/false to the .env file.
 func (s *Server) handleSaveReplacePlaylist(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -657,8 +653,11 @@ func (s *Server) handleSaveReplacePlaylist(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	if err := s.toggleFlagInEnv(!body.Enabled, "--replace=false"); err != nil {
+	val := "false"
+	if body.Enabled {
+		val = "true"
+	}
+	if err := updateEnvKeys(s.cfg.WebEnvPath, map[string]string{"REPLACE_PLAYLIST": val}, web.SampleEnv); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

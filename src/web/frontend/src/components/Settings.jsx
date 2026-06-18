@@ -531,8 +531,8 @@ function DownloadPathSection() {
         ...jsonPresets,
       ]
       setEnrichEnabled(values.ENRICH_TRACK_METADATA === 'true')
+      setReplacePlaylist(values.REPLACE_PLAYLIST !== 'false')
       const anyFlags = values.WEEKLY_EXPLORATION_FLAGS || values.WEEKLY_JAMS_FLAGS || values.DAILY_JAMS_FLAGS || values.ON_REPEAT_FLAGS || ''
-      setReplacePlaylist(!anyFlags.includes('--replace=false'))
       setCleanDownloads(anyFlags.includes('--clean-downloads'))
       const t = values.PATH_TEMPLATE || ''
       if (t) {
