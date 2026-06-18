@@ -223,14 +223,6 @@ func main() {
 		}
 	}
 
-	if cfg.ServerCfg.Enabled {
-		added := make(map[string]bool)
-		for _, t := range tracks {
-			added[t.CleanTitle+"|"+t.Artist] = true
-		}
-		backend.WritePlaylistCache(cfg.Flags.CfgPath, cfg.Flags.Playlist, allTracks, added)
-	}
-
 	if err := client.CreatePlaylist(tracks); err != nil {
 		slog.Warn(err.Error())
 	} else {
