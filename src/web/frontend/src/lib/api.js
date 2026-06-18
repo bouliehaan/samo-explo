@@ -229,8 +229,8 @@ export async function saveEnrichMetadata(enabled) {
   if (!res.ok) throw new Error(await res.text())
 }
 
-export async function savePersist(enabled) {
-  const res = await apiFetch('/api/ui/config/persist', {
+export async function saveReplacePlaylist(enabled) {
+  const res = await apiFetch('/api/ui/config/replace-playlist', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),

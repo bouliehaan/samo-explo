@@ -15,7 +15,7 @@ import {
   fetchConfig, fetchConfigRaw, saveConfig, resetConfig,
   saveSchedule, startRun, stopRun, fetchRunStatus, fetchLogs,
   fetchCustomPlaylists, deleteCustomPlaylist, savePathTemplate, saveEnrichMetadata,
-  savePersist, saveCleanDownloads,
+  saveReplacePlaylist, saveCleanDownloads,
   fetchPathTemplatePresets, addPathTemplatePreset, deletePathTemplatePreset,
 } from '../lib/api'
 import { parseSlogLine, cronToFields, highlightEnv } from '../lib/utils'
@@ -532,7 +532,7 @@ function DownloadPathSection() {
       ]
       setEnrichEnabled(values.ENRICH_TRACK_METADATA === 'true')
       const anyFlags = values.WEEKLY_EXPLORATION_FLAGS || values.WEEKLY_JAMS_FLAGS || values.DAILY_JAMS_FLAGS || values.ON_REPEAT_FLAGS || ''
-      setReplacePlaylist(anyFlags.includes('--persist=false'))
+      setReplacePlaylist(!anyFlags.includes('--replace=false'))
       setCleanDownloads(anyFlags.includes('--clean-downloads'))
       const t = values.PATH_TEMPLATE || ''
       if (t) {
@@ -564,7 +564,7 @@ function DownloadPathSection() {
   const handleReplaceToggle = async () => {
     const next = !replacePlaylist
     setReplacePlaylist(next)
-    try { await savePersist(!next) } catch { setReplacePlaylist(!next) }
+    try { await saveReplacePlaylist(next) } catch { setReplacePlaylist(!next) }
   }
 
   const handleCleanToggle = async () => {

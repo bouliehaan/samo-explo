@@ -245,7 +245,7 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/api/ui/config/schedules", s.authStore.RequireAuth(http.HandlerFunc(s.handleSaveSchedule)))
 	s.mux.Handle("/api/ui/config/path-template", s.authStore.RequireAuth(http.HandlerFunc(s.handleSavePathTemplate)))
 	s.mux.Handle("/api/ui/config/enrich-metadata", s.authStore.RequireAuth(http.HandlerFunc(s.handleSaveEnrichMetadata)))
-	s.mux.Handle("/api/ui/config/persist", s.authStore.RequireAuth(http.HandlerFunc(s.handleSavePersist)))
+	s.mux.Handle("/api/ui/config/replace-playlist", s.authStore.RequireAuth(http.HandlerFunc(s.handleSaveReplacePlaylist)))
 	s.mux.Handle("/api/ui/config/clean-downloads", s.authStore.RequireAuth(http.HandlerFunc(s.handleSaveCleanDownloads)))
 
 	// Path template presets: GET list, POST add; DELETE per name under prefix
@@ -557,12 +557,12 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Carry over --persist=false / --clean-downloads if globally set
+	// Carry over --replace=false / --clean-downloads if globally set
 	data, _ := os.ReadFile(s.cfg.WebEnvPath)
 	for k, v := range parseEnvText(string(data)) {
 		if strings.HasSuffix(k, "_FLAGS") && v != "" {
-			if strings.Contains(v, "--persist=false") {
-				defaultFlags = addFlag(defaultFlags, "--persist=false")
+			if strings.Contains(v, "--replace=false") {
+				defaultFlags = addFlag(defaultFlags, "--replace=false")
 			}
 			if strings.Contains(v, "--clean-downloads") {
 				defaultFlags = addFlag(defaultFlags, "--clean-downloads")
@@ -643,9 +643,9 @@ func (s *Server) handleSaveEnrichMetadata(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleSavePersist toggles persist by injecting/removing --persist=false
+// handleSaveReplacePlaylist toggles replace by injecting/removing --replace=false
 // from every active *_FLAGS entry, which is what start.sh feeds to the CLI.
-func (s *Server) handleSavePersist(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSaveReplacePlaylist(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -658,15 +658,9 @@ func (s *Server) handleSavePersist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.toggleFlagInEnv(!body.Enabled, "--persist=false"); err != nil {
+	if err := s.toggleFlagInEnv(!body.Enabled, "--replace=false"); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	// Clean up the deprecated PERSIST env var if present
-	data, _ := os.ReadFile(s.cfg.WebEnvPath)
-	if _, ok := parseEnvText(string(data))["PERSIST"]; ok {
-		_ = updateEnvKeys(s.cfg.WebEnvPath, map[string]string{"PERSIST": ""}, web.SampleEnv)
 	}
 	w.WriteHeader(http.StatusOK)
 }

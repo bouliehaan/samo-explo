@@ -23,8 +23,8 @@ type Config struct {
 	NotifyCfg    NotifyConfig
 	ServerCfg    ServerConfig
 	Flags        Flags
-	PersistENV   bool `env:"PERSIST" env-default:"true"`
-	Persist      bool
+	ReplacePlaylistENV bool `env:"REPLACE_PLAYLIST" env-default:"true"`
+	ReplacePlaylist    bool
 	System       string `env:"EXPLO_SYSTEM"`
 	Debug        bool   `env:"DEBUG" env-default:"false"`
 	LogLevel     string `env:"LOG_LEVEL" env-default:"INFO"`
@@ -37,8 +37,8 @@ type Flags struct {
 	PlaylistSet	 bool
 	DownloadMode string
 	ExcludeLocal bool
-	Persist      bool
-	PersistSet   bool
+	ReplacePlaylist    bool
+	ReplacePlaylistSet bool
 	SearchMBID     string
 	RefreshOnly    bool
 	CleanDownloads bool
@@ -258,8 +258,8 @@ func (cfg *Config) HandleDeprecation() { //
 		slog.Warn("'DEBUG' variable is deprecated, please use LOG_LEVEL=DEBUG instead")
 		cfg.LogLevel = "DEBUG"
 	}
-	if cfg.Flags.PersistSet {
-		slog.Warn("--persist flag now only handles playlist deletion, use toggle in UI or --clean-downloads to delete tracks")
+	if cfg.Flags.ReplacePlaylistSet {
+		slog.Warn("--replace flag is deprecated, use the toggle in the UI instead")
 	}
 
 	if cfg.DiscoveryCfg.Listenbrainz.UserToken == "" {
@@ -274,7 +274,7 @@ func (cfg *Config) HandleDeprecation() { //
 // Generate playlist name and description
 func (cfg *Config) GenPlaylistDetails() {
 
-	cfg.ClientCfg.PlaylistName = getPlaylistName(cfg.Flags.Playlist, cfg.ClientCfg.PlaylistNFormat, cfg.Persist)
+	cfg.ClientCfg.PlaylistName = getPlaylistName(cfg.Flags.Playlist, cfg.ClientCfg.PlaylistNFormat, cfg.ReplacePlaylist)
 	cfg.ClientCfg.PlaylistDescr = fmt.Sprintf(
 		"Created for %s by Explo, using ListenBrainz recommendations.",
 		cfg.DiscoveryCfg.Listenbrainz.User)
@@ -287,14 +287,13 @@ func (cfg *Config) GenPlaylistDetails() {
 	}
 }
 
-func getPlaylistName(playlistType, format string, persist bool) string {
-
+func getPlaylistName(playlistType, format string, replace bool) string {
 
 	toTitle := cases.Title(language.Und)
 	base := toTitle.String(playlistType)
 
-	// Non-persistent or custom playlists always use base name
-	if !persist || strings.HasPrefix(playlistType, "custom-") {
+	// When replacing or for custom playlists, always use base name
+	if replace || strings.HasPrefix(playlistType, "custom-") {
 		return base
 	}
 
