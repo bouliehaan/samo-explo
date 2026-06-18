@@ -112,7 +112,37 @@ func NewServer(cfg config.ServerConfig) *Server {
 	return s
 }
 
+// migratePersistEnv converts the old PERSIST env var to REPLACE_PLAYLIST (inverted).
+// TODO: REMOVE THIS AFTER NEXT RELEASE — one-time migration for existing users.
+func (s *Server) migratePersistEnv() {
+	data, err := os.ReadFile(s.cfg.WebEnvPath)
+	if err != nil {
+		return
+	}
+	env := parseEnvText(string(data))
+	if _, hasPersist := env["PERSIST"]; !hasPersist {
+		return
+	}
+	if _, hasReplace := env["REPLACE_PLAYLIST"]; hasReplace {
+		// Already migrated, just clean up old key
+		_ = updateEnvKeys(s.cfg.WebEnvPath, map[string]string{"PERSIST": ""}, web.SampleEnv)
+		return
+	}
+	// PERSIST=true (accumulate) → REPLACE_PLAYLIST=false
+	// PERSIST=false (replace)   → REPLACE_PLAYLIST=true
+	val := "true"
+	if env["PERSIST"] == "true" {
+		val = "false"
+	}
+	_ = updateEnvKeys(s.cfg.WebEnvPath, map[string]string{
+		"REPLACE_PLAYLIST": val,
+		"PERSIST":          "",
+	}, web.SampleEnv)
+	slog.Info("migrated PERSIST env var to REPLACE_PLAYLIST", "value", val)
+}
+
 func (s *Server) Start() error {
+	s.migratePersistEnv()
 	s.initServerLog()
 	s.startJobs()
 	coversDir := filepath.Join(s.cfg.WebDataDir, "cache", "covers")
