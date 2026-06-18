@@ -108,7 +108,7 @@ function nextUpdateLabel(playlistType) {
   return `Next update ${nextMonday.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}`
 }
 
-export function TracklistDropdown({ playlist, lbUser, onRun }) {
+export function TracklistDropdown({ playlist, lbUser, onRun, refreshTick = 0 }) {
   const [tracks, setTracks] = useState([])
   const [generatedAt, setGeneratedAt] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -145,7 +145,7 @@ export function TracklistDropdown({ playlist, lbUser, onRun }) {
   useEffect(() => {
     if (!playlist) return
     return loadTracks(false)
-  }, [playlist])
+  }, [playlist, refreshTick])
 
   const handleFetch = () => {
     if (!lbUser) return
@@ -376,6 +376,7 @@ export function PlaylistCard({
   trackId,
   artworkUrl,
   sourceUrl,
+  refreshTick = 0,
 }) {
   const { value, name } = playlist
   // trackFetchId: use real playlist ID (custom playlists) if provided, else fall back to value
@@ -428,7 +429,7 @@ export function PlaylistCard({
       cancelled = true
       if (retryTimer) clearTimeout(retryTimer)
     }
-  }, [trackFetchId, s.enabled])
+  }, [trackFetchId, s.enabled, refreshTick])
 
   useEffect(() => {
     if (bgCovers.length < 2) return
