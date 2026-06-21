@@ -9,6 +9,8 @@ import (
 	"strings"
 	"context"
 	"sync"
+
+	"explo/src/web/backend/app"
 )
 
 // RunStatus is returned by GET /api/run/status.
@@ -45,12 +47,12 @@ type ManualRun struct {
 
 var errRunAlreadyStarted = errors.New("run already in progress")
 
-func NewManualRun(dataDir, envPath, exploPath string) *ManualRun {
+func NewManualRun(cfg app.Config) *ManualRun {
 	return &ManualRun{
 		cfg: Config{
-			webDataDir: dataDir,
-			webEnvPath: envPath,
-			exploPath: exploPath,
+			webDataDir: cfg.WebDataDir,
+			webEnvPath: cfg.WebEnvPath,
+			exploPath: cfg.ExploPath,
 		},
 		state: newManualRunState(),
 	}

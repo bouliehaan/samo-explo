@@ -17,6 +17,7 @@ import (
 	"explo/src/config"
 	"explo/src/web"
 	"explo/src/web/backend/run"
+	"explo/src/web/backend/app"
 )
 
 // Option is a value/label pair for select-type fields.
@@ -64,8 +65,14 @@ func NewServer(cfg config.ServerConfig) *Server {
 		sessionManager,
 	)
 
+	appCfg := app.Config{
+		WebEnvPath: cfg.WebEnvPath,
+		WebDataDir: cfg.WebDataDir,
+		ExploPath: cfg.ExploPath,
+	}
+
 	cronJobs := NewJobs()
-	manualRun := run.NewManualRun(cfg.WebDataDir, cfg.WebEnvPath, cfg.ExploPath)
+	manualRun := run.NewManualRun(appCfg)
 
 	mux := http.NewServeMux()
 	s := &Server{
