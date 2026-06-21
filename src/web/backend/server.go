@@ -18,6 +18,7 @@ import (
 	"explo/src/web"
 	"explo/src/web/backend/run"
 	"explo/src/web/backend/app"
+	"explo/src/web/backend/defs"
 )
 
 // Option is a value/label pair for select-type fields.
@@ -444,7 +445,7 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 	if def, ok := playlistDefs[body.Name]; ok {
 		envPrefix = def.EnvPrefix
 		defaultFlags = def.DefaultFlags
-	} else if customIDRe.MatchString(body.Name) {
+	} else if defs.CustomIDRe.MatchString(body.Name) {
 		envPrefix = customEnvPrefix(body.Name)
 		defaultFlags = "--playlist " + body.Name
 	} else {

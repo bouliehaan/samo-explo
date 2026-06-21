@@ -15,6 +15,7 @@ import (
 	"explo/src/discovery"
 	"explo/src/util"
 	"explo/src/web"
+	"explo/src/web/backend/defs"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -388,7 +389,7 @@ func (s *Server) handleImportCustomPlaylist(w http.ResponseWriter, r *http.Reque
 // Equivalent to manually triggering the nightly refresh cron job for a single playlist.
 func (s *Server) handleRefreshCustomPlaylist(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !customIDRe.MatchString(id) {
+	if !defs.CustomIDRe.MatchString(id) {
 		http.Error(w, "invalid playlist id", http.StatusBadRequest)
 		return
 	}
@@ -440,7 +441,7 @@ func (s *Server) handleRefreshCustomPlaylist(w http.ResponseWriter, r *http.Requ
 // playlist's download subdirectories from DOWNLOAD_DIR.
 func (s *Server) handleDeleteCustomPlaylist(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !customIDRe.MatchString(id) {
+	if !defs.CustomIDRe.MatchString(id) {
 		slog.Warn("custom-playlists: invalid id in delete request", "id", id)
 		http.Error(w, "invalid playlist id", http.StatusBadRequest)
 		return

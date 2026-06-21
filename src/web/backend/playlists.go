@@ -6,6 +6,7 @@ import (
 	"explo/src/discovery"
 	"explo/src/models"
 	"explo/src/util"
+	"explo/src/web/backend/defs"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -15,7 +16,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -41,11 +41,9 @@ var validPlaylistTypes = func() map[string]bool {
 	return m
 }()
 
-var customIDRe = regexp.MustCompile(`^custom-[a-z0-9]+$`)
-
 // isValidPlaylistID accepts built-in playlist types and custom-* IDs (blocks path traversal).
 func isValidPlaylistID(t string) bool {
-	return validPlaylistTypes[t] || customIDRe.MatchString(t)
+	return validPlaylistTypes[t] || defs.CustomIDRe.MatchString(t)
 }
 
 // handleGetPlaylist serves the tracklist cache written by explo during its last run.
