@@ -1,4 +1,4 @@
-package backend
+package playlist
 
 import (
 	"encoding/json"
