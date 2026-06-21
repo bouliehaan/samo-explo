@@ -28,8 +28,7 @@ func (s *Server) registerRoutes() {
 	})
 
 	s.registerAuthRoutes()
-	s.registerConfigRoutes()
-	s.registerWizardRoutes()
+	s.registerSettingRoutes()
 	s.registerPlaylistRoutes()
 	s.registerRunRoutes()
 	s.registerMiscRoutes()
@@ -45,43 +44,43 @@ func (s *Server) registerAuthRoutes() {
 	s.mux.HandleFunc("GET /api/ui/auth/status", s.handleAuthStatus)
 }
 
-func (s *Server) registerConfigRoutes() {
-	s.mux.Handle("GET /api/ui/config", s.auth(s.handleGetConfig))
-	s.mux.Handle("POST /api/ui/config", s.auth(s.handleSaveConfig))
+func (s *Server) registerSettingRoutes() {
+	s.mux.Handle("GET /api/ui/config", s.auth(s.settings.HandleGetConfig))
+	s.mux.Handle("POST /api/ui/config", s.auth(s.settings.HandleSaveConfig))
 
-	s.mux.Handle("GET /api/ui/config/raw", s.auth(s.handleGetConfigRaw))
-	s.mux.Handle("POST /api/ui/config/reset", s.auth(s.handleResetConfig))
-	s.mux.Handle("POST /api/ui/config/schedules", s.auth(s.handleSaveSchedule))
-	s.mux.Handle("POST /api/ui/config/path-template", s.auth(s.handleSavePathTemplate))
-	s.mux.Handle("POST /api/ui/config/enrich-metadata", s.auth(s.handleSaveEnrichMetadata))
+	s.mux.Handle("GET /api/ui/config/raw", s.auth(s.settings.HandleGetConfigRaw))
+	s.mux.Handle("POST /api/ui/config/reset", s.auth(s.settings.HandleResetConfig))
+	s.mux.Handle("POST /api/ui/config/schedules", s.auth(s.settings.HandleSaveSchedule))
+	s.mux.Handle("POST /api/ui/config/path-template", s.auth(s.settings.HandleSavePathTemplate))
+	s.mux.Handle("POST /api/ui/config/enrich-metadata", s.auth(s.settings.HandleSaveEnrichMetadata))
 
 	// Path template presets: GET list, POST add; DELETE per name under prefix
 	s.mux.Handle("api/ui/path-templates", s.auth(s.handlePathTemplates))
 	s.mux.Handle("DELETE /api/ui/path-templates/", s.auth(s.handleDeletePathTemplate))
 
-}
-
-func (s *Server) registerWizardRoutes() {
 	// Wizard steps (POST) — require auth
-	s.mux.Handle("POST /api/ui/wizard/step1", s.auth(s.handleWizardStep1))
-	s.mux.Handle("POST /api/ui/wizard/step2", s.auth(s.handleWizardStep2))
-	s.mux.Handle("POST /api/ui/wizard/step3", s.auth(s.handleWizardStep3))
+	s.mux.Handle("POST /api/ui/wizard/step1", s.auth(s.settings.HandleWizardStep1))
+	s.mux.Handle("POST /api/ui/wizard/step2", s.auth(s.settings.HandleWizardStep2))
+	s.mux.Handle("POST /api/ui/wizard/step3", s.auth(s.settings.HandleWizardStep3))
 
 	// Public
-	s.mux.HandleFunc("GET /api/ui/setup-status", s.handleSetupStatus)
+	s.mux.HandleFunc("GET /api/ui/setup-status", s.settings.HandleSetupStatus)
+
 }
 
 func (s *Server) registerPlaylistRoutes() {
-	s.mux.Handle("GET /api/ui/playlists", s.auth(s.handleGetPlaylist))
-	s.mux.Handle("POST /api/ui/playlists/prefetch", s.auth(s.handlePrefetchCovers))
+	s.mux.Handle("GET /api/ui/playlists", s.auth(s.customPlaylist.HandleGetPlaylist))
+	s.mux.Handle("POST /api/ui/playlists/prefetch", s.auth(s.customPlaylist.HandlePrefetchCovers))
 
 	// custom playlists: GET list, POST import (same path); per-ID actions under prefix
-	s.mux.Handle("GET /api/ui/custom-playlists", s.auth(s.handleGetCustomPlaylists))
-	s.mux.Handle("POST /api/ui/custom-playlists", s.auth(s.handleImportCustomPlaylist))
+	s.mux.Handle("GET /api/ui/custom-playlists", s.auth(s.customPlaylist.HandleGetCustomPlaylists))
+	s.mux.Handle("POST /api/ui/custom-playlists", s.auth(s.customPlaylist.HandleImportCustomPlaylist))
 
 	// ID-specific routes: DELETE /api/ui/custom-playlists/{id} and POST .../{id}/refresh
-	s.mux.Handle("POST /api/ui/custom-playlists/{id}/refresh", s.auth(s.handleRefreshCustomPlaylist))
-	s.mux.Handle("DELETE /api/ui/custom-playlists/{id}", s.auth(s.handleDeleteCustomPlaylist))
+	s.mux.Handle("POST /api/ui/custom-playlists/{id}/refresh", s.auth(s.customPlaylist.HandleRefreshCustomPlaylist))
+	s.mux.Handle("DELETE /api/ui/custom-playlists/{id}", s.auth(s.customPlaylist.HandleDeleteCustomPlaylist))
+
+	s.mux.HandleFunc("GET /api/ui/background-art", s.customPlaylist.HandleBackgroundArt)
 }
 
 func (s *Server) registerRunRoutes() {
@@ -94,7 +93,6 @@ func (s *Server) registerRunRoutes() {
 func (s *Server) registerMiscRoutes() {
 	s.mux.Handle("GET /api/ui/logs", s.auth(s.handleGetLog))
 	s.mux.Handle("GET /api/ui/browse", s.auth(s.handleBrowse))
-	s.mux.HandleFunc("GET /api/ui/background-art", s.handleBackgroundArt)
 
 	coversDir := filepath.Join(s.cfg.WebDataDir, "cache", "covers")
 	s.mux.Handle("GET /api/covers/", http.StripPrefix("/api/covers/", http.FileServer(http.Dir(coversDir))))

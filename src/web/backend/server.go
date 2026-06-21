@@ -10,31 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
-	"os/exec"
 
 	"explo/src/config"
 	"explo/src/web"
-	"explo/src/web/backend/run"
 	"explo/src/web/backend/app"
-	"explo/src/web/backend/defs"
+	"explo/src/web/backend/run"
+	"explo/src/web/backend/playlist"
+	"explo/src/web/backend/jobs"
+	"explo/src/web/backend/settings"
 )
-
-// Option is a value/label pair for select-type fields.
-type Option struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
-}
-
-// Condition expresses a dependency on another field's value.
-// All non-zero properties are ANDed together.
-type Condition struct {
-	Field    string   `json:"field"`
-	Eq       string   `json:"eq,omitempty"`       // field === value
-	In       []string `json:"in,omitempty"`       // field is one of values
-	Contains string   `json:"contains,omitempty"` // value appears in field's comma-separated list
-}
 
 // ConfigResponse is returned by GET /api/config.
 type ConfigResponse struct {
@@ -47,9 +32,11 @@ type Server struct {
 	mux            *http.ServeMux
 	server         *http.Server
 	authStore      *AuthStore
-	cronJobs       *Jobs
+	settings       *settings.Settings
+	cronJobs       *jobs.Jobs
 	sessionManager *SessionManager
 	manualRun      *run.ManualRun
+	customPlaylist *playlist.Playlist
 }
 
 func NewServer(cfg config.ServerConfig) *Server {
@@ -65,15 +52,17 @@ func NewServer(cfg config.ServerConfig) *Server {
 		cfg.Password,
 		sessionManager,
 	)
-
-	appCfg := app.Config{
+	webCfg := app.Config{
 		WebEnvPath: cfg.WebEnvPath,
 		WebDataDir: cfg.WebDataDir,
 		ExploPath: cfg.ExploPath,
 	}
 
-	cronJobs := NewJobs()
-	manualRun := run.NewManualRun(appCfg)
+	settings := settings.NewSettings(webCfg)
+
+	cronJobs := jobs.NewJobs()
+	manualRun := run.NewManualRun(webCfg)
+	playlist := playlist.NewPlaylist(webCfg, settings)
 
 	mux := http.NewServeMux()
 	s := &Server{
@@ -84,9 +73,11 @@ func NewServer(cfg config.ServerConfig) *Server {
 			Handler: sessionManager.Handle(mux),
 		},
 		authStore:      authStore,
+		settings: settings,
 		cronJobs:       cronJobs,
 		sessionManager: sessionManager,
 		manualRun:      manualRun,
+		customPlaylist: playlist,
 	}
 
 	s.registerRoutes()
@@ -98,7 +89,7 @@ func (s *Server) Start() error {
 	s.startJobs()
 	coversDir := filepath.Join(s.cfg.WebDataDir, "cache", "covers")
 	if _, err := os.Stat(coversDir); os.IsNotExist(err) {
-		s.PrefetchCovers()
+		s.customPlaylist.PrefetchCovers()
 	}
 	slog.Info("Explo web UI started", "addr", s.server.Addr)
 	go checkForUpdate()
@@ -138,28 +129,6 @@ func checkForUpdate() {
 	}
 }
 
-// triggerLibraryRefresh spawns the CLI with --refresh-only in the background to
-// nudge the configured media server's library scan. Fire-and-forget: errors are
-// logged but do not block the caller.
-func (s *Server) triggerLibraryRefresh() {
-	go func() {
-		cmd := exec.Command(s.cfg.ExploPath, "--refresh-only", "--config", s.cfg.WebEnvPath)
-		env := make([]string, 0, len(os.Environ()))
-		for _, e := range os.Environ() {
-			if !strings.HasPrefix(e, "WEB_UI=") {
-				env = append(env, e)
-			}
-		}
-		cmd.Env = env
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			slog.Warn("library refresh failed", "err", err.Error(), "output", string(out))
-			return
-		}
-		slog.Info("library refresh complete")
-	}()
-}
-
 func parseVer(v string) [3]int {
 	v = strings.TrimPrefix(v, "v")
 	parts := strings.SplitN(v, ".", 3)
@@ -182,21 +151,11 @@ func (s *Server) startJobs() {
 		slog.Warn("failed to register cover cleanup job", "err", err.Error())
 	}
 
-	if err := s.cronJobs.RegisterCustomPlaylistRefresh(s.cfg.WebDataDir, s.cfg.WebEnvPath); err != nil {
+	if err := s.customPlaylist.RegisterCustomPlaylistRefresh(s.cronJobs); err != nil {
 		slog.Warn("failed to register custom playlist refresh job", "err", err.Error())
 	}
 
 	s.cronJobs.Start()
-}
-
-func (s *Server) PrefetchCovers() {
-
-	coversDir := filepath.Join(s.cfg.WebDataDir, "cache", "covers")
-
-	url := randomLocalCoverHiRes(coversDir)
-	if url == "" {
-		fetchSitewideCovers(coversDir)
-	}
 }
 
 // spaFS returns the filesystem to serve the frontend from.
@@ -238,18 +197,6 @@ func (s *Server) openRunLog() (*os.File, error) {
 		return nil, err
 	}
 	return os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-}
-
-// handleSetupStatus returns {"wizard_complete": bool} for first time setups. Public — no auth required.
-func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
-	wizardComplete := false
-	if data, err := os.ReadFile(s.cfg.WebEnvPath); err == nil {
-		wizardComplete = parseEnvText(string(data))["WIZARD_COMPLETE"] == "true"
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]bool{"wizard_complete": wizardComplete}); err != nil {
-		slog.Error("failed encoding setup status", "err", err.Error())
-	}
 }
 
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
@@ -320,431 +267,6 @@ func (s *Server) csrfHandler(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("failed encoding token to http", "msg", err.Error())
 	}
-}
-
-// ── Config ─────────────────────────────────────────────────────────────────
-
-// parseEnvText parses key=value lines, ignoring comments, blanks and unquotes variables
-func parseEnvText(text string) map[string]string {
-	out := map[string]string{}
-	for line := range strings.SplitSeq(text, "\n") {
-		t := strings.TrimSpace(line)
-		if t == "" || strings.HasPrefix(t, "#") {
-			continue
-		}
-		k, v, ok := strings.Cut(t, "=")
-		if !ok {
-			continue
-		}
-		if k = strings.TrimSpace(k); k != "" {
-			v = strings.TrimSpace(v)
-
-			// unquote if quoted
-			if len(v) >= 2 {
-				if (v[0] == '\'' && v[len(v)-1] == '\'') ||
-					(v[0] == '"' && v[len(v)-1] == '"') {
-					v = v[1 : len(v)-1]
-				}
-			}
-			out[k] = v
-		}
-	}
-	return out
-}
-
-// handleGetConfig returns resolved config as JSON: { values, sources }.
-// File keys are checked first because cleanenv sets them as OS env vars on startup,
-// so checking os.LookupEnv first would misclassify all file keys as "env".
-// Only keys present in the OS environment but absent from the file are marked "env".
-func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
-	data, err := os.ReadFile(s.cfg.WebEnvPath)
-	var fileValues map[string]string
-	if err == nil {
-		fileValues = parseEnvText(string(data))
-	} else {
-		fileValues = parseEnvText(string(web.SampleEnv))
-	}
-
-	values := make(map[string]string, len(defs.AllConfigKeys))
-	sources := make(map[string]string, len(defs.AllConfigKeys))
-	for _, key := range defs.AllConfigKeys {
-		if v, ok := fileValues[key]; ok && v != "" {
-			values[key] = v
-			sources[key] = "file"
-		} else if v, ok := os.LookupEnv(key); ok && v != "" {
-			values[key] = v
-			sources[key] = "env"
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(ConfigResponse{Values: values, Sources: sources}); err != nil {
-		slog.Error("failed encoding config to http", "msg", err.Error())
-	}
-}
-
-// handleGetConfigRaw returns the raw .env file contents as plain text.
-func (s *Server) handleGetConfigRaw(w http.ResponseWriter, r *http.Request) {
-	data, err := os.ReadFile(s.cfg.WebEnvPath)
-	if err != nil {
-		data = web.SampleEnv
-	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	if _, err := w.Write(data); err != nil {
-		slog.Error("failed writing http response", "msg", err.Error())
-	}
-}
-
-// handleSaveConfig writes the posted plain-text body directly to the .env file.
-func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
-	data, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := os.WriteFile(s.cfg.WebEnvPath, data, 0600); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-// handleResetConfig resets all settings and restarts the container.
-func (s *Server) handleResetConfig(w http.ResponseWriter, r *http.Request) {
-	if err := os.WriteFile(s.cfg.WebEnvPath, web.SampleEnv, 0600); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		if err := syscall.Kill(1, syscall.SIGTERM); err != nil {
-			slog.Warn("failed to kill process", "msg", err.Error())
-		}
-
-	}()
-}
-
-// handleSaveSchedule updates a single playlist's schedule in the .env file.
-func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Name    string `json:"name"`
-		Enabled bool   `json:"enabled"`
-		Day     int    `json:"day"` // 0=Sun…6=Sat, -1=every day
-		Hour    int    `json:"hour"`
-		Minute  int    `json:"minute"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	var envPrefix string
-	var defaultFlags string
-
-	if def, ok := defs.PlaylistDefs[body.Name]; ok {
-		envPrefix = def.EnvPrefix
-		defaultFlags = def.DefaultFlags
-	} else if defs.CustomIDRe.MatchString(body.Name) {
-		envPrefix = customEnvPrefix(body.Name)
-		defaultFlags = "--playlist " + body.Name
-	} else {
-		http.Error(w, "unknown playlist name", http.StatusBadRequest)
-		return
-	}
-
-	updates := map[string]string{}
-	if !body.Enabled {
-		// Toggle off — truly disable, regardless of day value carried over from state
-		updates[envPrefix+"_SCHEDULE"] = ""
-		updates[envPrefix+"_FLAGS"] = ""
-	} else if body.Day == -2 {
-		// "Never" — keep playlist active for manual runs but remove auto-schedule
-		updates[envPrefix+"_SCHEDULE"] = ""
-		updates[envPrefix+"_FLAGS"] = defaultFlags
-	} else {
-		dom := "*"
-		dow := "*"
-		if body.Day == 100 {
-			dom = "1"
-		} else if body.Day >= 0 {
-			dow = fmt.Sprintf("%d", body.Day)
-		}
-		updates[envPrefix+"_SCHEDULE"] = fmt.Sprintf("%d %d %s * %s", body.Minute, body.Hour, dom, dow)
-		updates[envPrefix+"_FLAGS"] = defaultFlags
-	}
-
-	if err := updateEnvKeys(s.cfg.WebEnvPath, updates, web.SampleEnv); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-// handleSavePathTemplate writes the PATH_TEMPLATE key to the .env file.
-func (s *Server) handleSavePathTemplate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var body struct {
-		Template string `json:"template"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := updateEnvKeys(s.cfg.WebEnvPath, map[string]string{"PATH_TEMPLATE": body.Template}, web.SampleEnv); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-// handleSaveEnrichMetadata writes ENRICH_TRACK_METADATA=true/false to the .env file.
-func (s *Server) handleSaveEnrichMetadata(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var body struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	val := "false"
-	if body.Enabled {
-		val = "true"
-	}
-	if err := updateEnvKeys(s.cfg.WebEnvPath, map[string]string{"ENRICH_TRACK_METADATA": val}, web.SampleEnv); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-// updateEnvKeys reads the env file (falling back to fallback if missing), updates the
-// given key=value pairs in-place preserving comments, and writes the result back.
-func updateEnvKeys(path string, updates map[string]string, fallback []byte) error {
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		data = fallback
-	} else if err != nil {
-		return err
-	}
-
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	touched := make(map[string]bool)
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		key, _, ok := strings.Cut(trimmed, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		if val, ok := updates[key]; ok {
-			if val == "" {
-				lines[i] = "" // remove by blanking
-			} else {
-				lines[i] = key + "=" + formatEnvValue(val)
-			}
-			touched[key] = true
-		}
-	}
-
-	// Append any keys that weren't already in the file
-	for k, v := range updates {
-		if !touched[k] && v != "" {
-			lines = append(lines, k+"="+formatEnvValue(v))
-		}
-	}
-
-	// Filter out consecutive blank lines left by removals
-	out := make([]string, 0, len(lines))
-	prevBlank := false
-	for _, l := range lines {
-		blank := strings.TrimSpace(l) == ""
-		if blank && prevBlank {
-			continue
-		}
-		out = append(out, l)
-		prevBlank = blank
-	}
-
-	return os.WriteFile(path, []byte(strings.Join(out, "\n")+"\n"), 0600)
-}
-
-// Check for special chars in env vars that might need quoting
-func formatEnvValue(v string) string {
-	// preserve already quoted values
-	if strings.HasPrefix(v, "'") && strings.HasSuffix(v, "'") {
-		return v
-	}
-
-	if strings.ContainsAny(v, `"$#?' `) {
-		// escape single quotes inside value
-		v = strings.ReplaceAll(v, `'`, `'\''`)
-		return fmt.Sprintf(`'%s'`, v)
-	}
-
-	return v
-}
-
-// ── Wizard ─────────────────────────────────────────────────────────────────
-
-// handleWizardStep1 saves discovery settings (username + enabled playlists with default schedules).
-func (s *Server) handleWizardStep1(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		User          string   `json:"user"`
-		Playlists     []string `json:"playlists"`
-		DiscoveryMode string   `json:"discovery_mode"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if body.User == "" {
-		http.Error(w, "user is required", http.StatusBadRequest)
-		return
-	}
-
-	enabled := make(map[string]bool, len(body.Playlists))
-	for _, p := range body.Playlists {
-		enabled[p] = true
-	}
-
-	updates := map[string]string{
-		"LISTENBRAINZ_USER":      body.User,
-		"LISTENBRAINZ_DISCOVERY": body.DiscoveryMode,
-	}
-	for name, def := range defs.PlaylistDefs {
-		if enabled[name] {
-			updates[def.EnvPrefix+"_SCHEDULE"] = def.DefaultSchedule
-			updates[def.EnvPrefix+"_FLAGS"] = def.DefaultFlags
-		} else {
-			updates[def.EnvPrefix+"_SCHEDULE"] = ""
-			updates[def.EnvPrefix+"_FLAGS"] = ""
-		}
-	}
-
-	if err := updateEnvKeys(s.cfg.WebEnvPath, updates, web.SampleEnv); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-// handleWizardStep2 saves media system configuration.
-func (s *Server) handleWizardStep2(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		System         string `json:"system"`
-		URL            string `json:"url"`
-		APIKey         string `json:"api_key"`
-		LibraryName    string `json:"library_name"`
-		Username       string `json:"username"`
-		Password       string `json:"password"`
-		PlaylistDir    string `json:"playlist_dir"`
-		Sleep          string `json:"sleep"`
-		AdminAPIKey	   string `json:"admin_api_key"`
-		AdminSystemUsername string `json:"admin_system_username"`
-		AdminSystemPassword string `json:"admin_system_password"`
-
-		PublicPlaylist bool   `json:"public_playlist"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if body.System == "" {
-		http.Error(w, "system is required", http.StatusBadRequest)
-		return
-	}
-
-	publicPlaylist := ""
-	if body.PublicPlaylist {
-		publicPlaylist = "true"
-	}
-	updates := map[string]string{
-		"EXPLO_SYSTEM":    body.System,
-		"SYSTEM_URL":      body.URL,
-		"API_KEY":         body.APIKey,
-		"LIBRARY_NAME":    body.LibraryName,
-		"SYSTEM_USERNAME": body.Username,
-		"SYSTEM_PASSWORD": body.Password,
-		"PLAYLIST_DIR":    body.PlaylistDir,
-		"SLEEP":           body.Sleep,
-		"PUBLIC_PLAYLIST": publicPlaylist,
-		"ADMIN_SYSTEM_USERNAME": body.AdminSystemUsername,
-		"ADMIN_SYSTEM_PASSWORD": body.AdminSystemPassword,
-		"ADMIN_SYSTEM_APIKEY": body.AdminAPIKey,
-	}
-
-	if err := updateEnvKeys(s.cfg.WebEnvPath, updates, web.SampleEnv); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-// handleWizardStep3 saves downloader configuration.
-func (s *Server) handleWizardStep3(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		DownloadDir      string   `json:"download_dir"`
-		UseSubdirectory  bool     `json:"use_subdirectory"`
-		MigrateDownloads bool     `json:"migrate_downloads"`
-		DownloadServices []string `json:"download_services"`
-		YoutubeAPIKey    string   `json:"youtube_api_key"`
-		TrackExtension   string   `json:"track_extension"` // yt-dlp
-		FilterList       string   `json:"filter_list"`
-		SlskdURL         string   `json:"slskd_url"`
-		SlskdAPIKey      string   `json:"slskd_api_key"`
-		Extensions       string   `json:"extensions"` // slskd
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if len(body.DownloadServices) == 0 {
-		http.Error(w, "at least one download service is required", http.StatusBadRequest)
-		return
-	}
-	joined := strings.Join(body.DownloadServices, ",")
-
-	useSubdir := "false"
-	if body.UseSubdirectory {
-		useSubdir = "true"
-	}
-	migrateDL := "false"
-	if body.MigrateDownloads {
-		migrateDL = "true"
-	}
-	updates := map[string]string{
-		"DOWNLOAD_DIR":      body.DownloadDir,
-		"USE_SUBDIRECTORY":  useSubdir,
-		"MIGRATE_DOWNLOADS": migrateDL,
-		"DOWNLOAD_SERVICES": joined,
-		"YOUTUBE_API_KEY":   body.YoutubeAPIKey,
-		"TRACK_EXTENSION":   body.TrackExtension, // yt-dlp
-		"FILTER_LIST":       body.FilterList,
-		"SLSKD_URL":         body.SlskdURL,
-		"SLSKD_API_KEY":     body.SlskdAPIKey,
-		"EXTENSIONS":        body.Extensions, // slskd
-		"WIZARD_COMPLETE":   "true",
-	}
-
-	if err := updateEnvKeys(s.cfg.WebEnvPath, updates, web.SampleEnv); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
 }
 
 // handleBrowse returns subdirectories of the requested path for filesystem autocomplete.
