@@ -365,9 +365,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		fileValues = parseEnvText(string(web.SampleEnv))
 	}
 
-	values := make(map[string]string, len(allConfigKeys))
-	sources := make(map[string]string, len(allConfigKeys))
-	for _, key := range allConfigKeys {
+	values := make(map[string]string, len(defs.AllConfigKeys))
+	sources := make(map[string]string, len(defs.AllConfigKeys))
+	for _, key := range defs.AllConfigKeys {
 		if v, ok := fileValues[key]; ok && v != "" {
 			values[key] = v
 			sources[key] = "file"
@@ -442,7 +442,7 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 	var envPrefix string
 	var defaultFlags string
 
-	if def, ok := playlistDefs[body.Name]; ok {
+	if def, ok := defs.PlaylistDefs[body.Name]; ok {
 		envPrefix = def.EnvPrefix
 		defaultFlags = def.DefaultFlags
 	} else if defs.CustomIDRe.MatchString(body.Name) {
@@ -735,7 +735,7 @@ func (s *Server) handleWizardStep1(w http.ResponseWriter, r *http.Request) {
 		"LISTENBRAINZ_USER":      body.User,
 		"LISTENBRAINZ_DISCOVERY": body.DiscoveryMode,
 	}
-	for name, def := range playlistDefs {
+	for name, def := range defs.PlaylistDefs {
 		if enabled[name] {
 			updates[def.EnvPrefix+"_SCHEDULE"] = def.DefaultSchedule
 			updates[def.EnvPrefix+"_FLAGS"] = def.DefaultFlags
