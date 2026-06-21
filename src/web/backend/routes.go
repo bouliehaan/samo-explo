@@ -55,8 +55,8 @@ func (s *Server) registerSettingRoutes() {
 	s.mux.Handle("POST /api/ui/config/enrich-metadata", s.auth(s.settings.HandleSaveEnrichMetadata))
 
 	// Path template presets: GET list, POST add; DELETE per name under prefix
-	s.mux.Handle("api/ui/path-templates", s.auth(s.handlePathTemplates))
-	s.mux.Handle("DELETE /api/ui/path-templates/", s.auth(s.handleDeletePathTemplate))
+	s.mux.Handle("api/ui/path-templates", s.auth(s.settings.HandlePathTemplates))
+	s.mux.Handle("DELETE /api/ui/path-templates/", s.auth(s.settings.HandleDeletePathTemplate))
 
 	// Wizard steps (POST) — require auth
 	s.mux.Handle("POST /api/ui/wizard/step1", s.auth(s.settings.HandleWizardStep1))

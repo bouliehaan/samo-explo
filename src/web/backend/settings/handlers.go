@@ -10,6 +10,7 @@ import (
 	"time"
 	"fmt"
 	"strings"
+	"net/url"
 
 	"explo/src/web"
 	"explo/src/web/backend/defs"
@@ -349,4 +350,74 @@ func (s *Settings) HandleSetupStatus(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(map[string]bool{"wizard_complete": wizardComplete}); err != nil {
 		slog.Error("failed encoding setup status", "err", err.Error())
 	}
+}
+
+// handlePathTemplates handles GET and POST for /api/ui/path-templates.
+func (s *Settings) HandlePathTemplates(w http.ResponseWriter, r *http.Request) {
+	cfgDir := s.cfg.WebDataDir
+	switch r.Method {
+	case http.MethodGet:
+		presets := loadPathTemplates(cfgDir)
+		if presets == nil {
+			presets = []PathTemplatePreset{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(presets); err != nil {
+			slog.Error("failed encoding path templates", "err", err.Error())
+		}
+	case http.MethodPost:
+		var body PathTemplatePreset
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Name == "" || body.Template == "" {
+			http.Error(w, "name and template are required", http.StatusBadRequest)
+			return
+		}
+		presets := loadPathTemplates(cfgDir)
+		presets = append(presets, body)
+		if err := savePathTemplates(cfgDir, presets); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		if err := json.NewEncoder(w).Encode(body); err != nil {
+			slog.Error("failed encoding path template", "err", err.Error())
+		}
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleDeletePathTemplate handles DELETE /api/ui/path-templates/{name}.
+func (s *Settings) HandleDeletePathTemplate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	raw := strings.TrimPrefix(r.URL.Path, "/api/ui/path-templates/")
+	name, err := url.PathUnescape(raw)
+	if err != nil || name == "" {
+		http.Error(w, "invalid name", http.StatusBadRequest)
+		return
+	}
+	cfgDir := s.cfg.WebDataDir
+	presets := loadPathTemplates(cfgDir)
+	filtered := presets[:0]
+	for _, p := range presets {
+		if p.Name != name {
+			filtered = append(filtered, p)
+		}
+	}
+	if len(filtered) == len(presets) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err := savePathTemplates(cfgDir, filtered); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
