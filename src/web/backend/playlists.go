@@ -34,8 +34,8 @@ type PlaylistTrack struct {
 
 // validPlaylistTypes is derived from playlistDefs — no manual sync needed.
 var validPlaylistTypes = func() map[string]bool {
-	m := make(map[string]bool, len(playlistDefs))
-	for k := range playlistDefs {
+	m := make(map[string]bool, len(defs.PlaylistDefs))
+	for k := range defs.PlaylistDefs {
 		m[k] = true
 	}
 	return m
