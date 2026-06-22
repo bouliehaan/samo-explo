@@ -165,6 +165,8 @@ func main() {
 		log.Fatal(srv.Start())
 	}
 
+	slog.Info("Pulling playlist", "playlist", cfg.Flags.Playlist)
+
 	var tracks []*models.Track
 	var err error
 	if strings.HasPrefix(cfg.Flags.Playlist, "custom-") {
@@ -178,11 +180,15 @@ func main() {
 		tracks, err = disc.Discover()
 	}
 
-  if err != nil {
+	if err != nil {
 		slog.Error(err.Error(), "notify", true)
 		os.Exit(1)
 	}
 	allTracks := append([]*models.Track(nil), tracks...)
+	if cfg.ServerCfg.WebDataDir != "" {
+		backend.WritePlaylistCache(cfg.ServerCfg.WebDataDir, cfg.Flags.Playlist, allTracks, nil)
+		slog.Info("Saved playlist", "playlist", cfg.Flags.Playlist, "tracks", len(allTracks))
+	}
 
 	client, err := client.NewClient(&cfg)
 	if err != nil {
@@ -215,14 +221,6 @@ func main() {
 			slog.Error("couldn't download any tracks", "notify", true)
 			os.Exit(1)
 		}
-	}
-
-	if cfg.ServerCfg.Enabled {
-		added := make(map[string]bool)
-		for _, t := range tracks {
-			added[t.CleanTitle+"|"+t.Artist] = true
-		}
-		backend.WritePlaylistCache(cfg.Flags.CfgPath, cfg.Flags.Playlist, allTracks, added)
 	}
 
 	if err := client.CreatePlaylist(tracks); err != nil {

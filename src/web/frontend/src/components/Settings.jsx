@@ -19,7 +19,7 @@ import {
   fetchPathTemplatePresets, addPathTemplatePreset, deletePathTemplatePreset,
 } from '../lib/api'
 import { parseSlogLine, cronToFields, highlightEnv } from '../lib/utils'
-import { fetchPlaylistTracks } from '../lib/listenbrainz'
+import { fetchPlaylistTracks, clearPlaylistCache } from '../lib/listenbrainz'
 import { motion, AnimatePresence } from 'motion/react'
 import { Toggle } from './ui/Toggle'
 import { Button, SectionLabel, Panel, LogRow } from './ui/common'
@@ -134,6 +134,7 @@ function CustomPlaylistsSection({
   onDelete,
   showImportModal,
   setShowImportModal,
+  refreshTick = 0,
 }) {
   return (
     <div className="mt-6">
@@ -170,6 +171,7 @@ function CustomPlaylistsSection({
                 onTracklistToggle={() => setOpenTracklist(v => v === cp.id ? null : cp.id)}
                 sourceUrl={cp.source_url || undefined}
                 onDelete={(opts) => onDelete(cp.id, opts)}
+                refreshTick={refreshTick}
               />
             )
           })}
@@ -181,6 +183,7 @@ function CustomPlaylistsSection({
           playlist={openTracklist}
           lbUser={null}
           onRun={() => onSync(openTracklist)}
+          refreshTick={refreshTick}
         />
       </TracklistSlide>
 
@@ -216,6 +219,8 @@ function HomeSection() {
   const [logEntries, setLogEntries] = useState([])
   const [rawLog, setRawLog] = useState(false)
   const logRef = useRef(null)
+
+  const [refreshTick, setRefreshTick] = useState(0)
 
   useEffect(() => {
     Promise.all([
@@ -255,6 +260,10 @@ function HomeSection() {
   const onDone = useCallback(code => {
     setStatus(code === 0 ? 'done ✓' : code === null ? 'error' : `failed (exit ${code})`)
     setRunning(false)
+    if (code !== null) {
+      clearPlaylistCache()
+      setRefreshTick(t => t + 1)
+    }
   }, [])
 
   const { connect, disconnect } = useSSE({ onLine, onDone })
@@ -362,6 +371,7 @@ function HomeSection() {
               nextRunText={nextRunText(p.value)}
               tracklistOpen={openTracklist === p.value}
               onTracklistToggle={() => setOpenTracklist(v => v === p.value ? null : p.value)}
+              refreshTick={refreshTick}
             />
           ))}
         </div>
@@ -369,6 +379,7 @@ function HomeSection() {
           <TracklistDropdown
             lbUser={lbUser}
             playlist={openTracklist}
+            refreshTick={refreshTick}
             onRun={async () => {
               await startRun(openTracklist, 'normal', true, false)
               setRunning(true)
@@ -384,6 +395,7 @@ function HomeSection() {
       {/* Custom Playlists */}
       <CustomPlaylistsSection
         customPlaylists={customPlaylists}
+        refreshTick={refreshTick}
         schedules={schedules}
         scheduleProps={scheduleProps}
         openTracklist={openTracklist}
