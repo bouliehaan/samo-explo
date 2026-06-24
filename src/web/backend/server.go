@@ -19,6 +19,7 @@ import (
 	"explo/src/web/backend/playlist"
 	"explo/src/web/backend/jobs"
 	"explo/src/web/backend/settings"
+	"explo/src/web/backend/auth"
 )
 
 // ConfigResponse is returned by GET /api/config.
@@ -31,23 +32,22 @@ type Server struct {
 	cfg            config.ServerConfig
 	mux            *http.ServeMux
 	server         *http.Server
-	authStore      *AuthStore
+	authStore      *auth.AuthStore
 	settings       *settings.Settings
 	cronJobs       *jobs.Jobs
-	sessionManager *SessionManager
 	manualRun      *run.ManualRun
 	customPlaylist *playlist.Playlist
 }
 
 func NewServer(cfg config.ServerConfig) *Server {
-	sessionManager := NewSessionManager(
-		NewInMemorySessionStore(),
+	sessionManager := auth.NewSessionManager(
+		auth.NewInMemorySessionStore(),
 		1*time.Hour,
 		7*(24*time.Hour),
 		"session",
 	)
 
-	authStore := NewAuthStore(
+	authStore := auth.NewAuthStore(
 		cfg.Username,
 		cfg.Password,
 		sessionManager,
@@ -73,9 +73,8 @@ func NewServer(cfg config.ServerConfig) *Server {
 			Handler: sessionManager.Handle(mux),
 		},
 		authStore:      authStore,
-		settings: settings,
+		settings:       settings,
 		cronJobs:       cronJobs,
-		sessionManager: sessionManager,
 		manualRun:      manualRun,
 		customPlaylist: playlist,
 	}
@@ -199,49 +198,6 @@ func (s *Server) openRunLog() (*os.File, error) {
 	return os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 }
 
-func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
-	sess := s.sessionManager.GetSession(r)
-	auth, _ := sess.Get("authenticated").(bool)
-	if !auth {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		err := http.StatusMethodNotAllowed
-		http.Error(w, "Invalid request method", err)
-		return
-	}
-
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
-	if !s.authStore.CompareCreds(username, password) {
-		http.Error(w, "invalid credentials", http.StatusUnauthorized)
-		return
-	}
-	sess := s.sessionManager.GetSession(r)
-	sess.Put("authenticated", true)
-	sess.Put("username", username)
-	//s.sessionManager.Migrate(sess)
-	slog.Info("successful login", "user", username)
-}
-
-func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	sess := s.sessionManager.GetSession(r)
-	sess.Delete("authenticated")
-	sess.Delete("username")
-	w.WriteHeader(http.StatusOK)
-}
-
 // handleGetLog returns the contents of the rolling log file.
 func (s *Server) handleGetLog(w http.ResponseWriter, r *http.Request) {
 	data, err := os.ReadFile(s.logPath())
@@ -252,20 +208,6 @@ func (s *Server) handleGetLog(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	if _, err := w.Write(data); err != nil {
 		slog.Error("failed writing http response", "msg", err.Error())
-	}
-}
-
-func (s *Server) csrfHandler(w http.ResponseWriter, r *http.Request) {
-	session := s.sessionManager.GetSession(r)
-
-	token, _ := session.Get("csrf_token").(string)
-
-	w.Header().Set("Content-Type", "application/json")
-
-	if err := json.NewEncoder(w).Encode(map[string]string{
-		"csrf_token": token,
-	}); err != nil {
-		slog.Error("failed encoding token to http", "msg", err.Error())
 	}
 }
 

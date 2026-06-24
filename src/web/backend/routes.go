@@ -36,12 +36,12 @@ func (s *Server) registerRoutes() {
 }
 
 func (s *Server) registerAuthRoutes() {
-	s.mux.Handle("POST /api/ui/logout", s.auth(s.handleLogout))
+	s.mux.Handle("POST /api/ui/logout", s.auth(s.authStore.HandleLogout))
 
 	// Public routes
-	s.mux.HandleFunc("GET /api/ui/csrf", s.csrfHandler)
-	s.mux.HandleFunc("POST /api/ui/login", s.handleLogin)
-	s.mux.HandleFunc("GET /api/ui/auth/status", s.handleAuthStatus)
+	s.mux.HandleFunc("GET /api/ui/csrf", s.authStore.HandleCSRF)
+	s.mux.HandleFunc("POST /api/ui/login", s.authStore.HandleLogin)
+	s.mux.HandleFunc("GET /api/ui/auth/status", s.authStore.HandleAuthStatus)
 }
 
 func (s *Server) registerSettingRoutes() {
