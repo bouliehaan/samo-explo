@@ -596,6 +596,15 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	for k, v := range updates {
+		if v == "" {
+			os.Unsetenv(k)
+		} else {
+			os.Setenv(k, v)
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
