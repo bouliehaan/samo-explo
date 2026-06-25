@@ -599,9 +599,13 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 
 	for k, v := range updates {
 		if v == "" {
-			os.Unsetenv(k)
+			if err := os.Unsetenv(k); err != nil {
+				slog.Warn("failed to unset env variable", "err", err.Error())
+			}
 		} else {
-			os.Setenv(k, v)
+			if err := os.Setenv(k, v); err != nil {
+				slog.Warn("failed to set env variable", "err", err.Error())
+			}
 		}
 	}
 
