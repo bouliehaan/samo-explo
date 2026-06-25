@@ -77,7 +77,7 @@ func (mr *ManualRun) unsubscribeRun(ch chan runEvent) {
 
 // logPath returns the path to the single rolling log file.
 func (mr *ManualRun) logPath() string {
-	return filepath.Join(mr.cfg.webDataDir, "logs", "explo.log")
+	return filepath.Join(mr.cfg.WebDataDir, "logs", "explo.log")
 }
 
 // initServerLog redirects the default slog handler so all server log output

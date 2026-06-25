@@ -19,12 +19,6 @@ type RunStatus struct {
 	ExitCode *int `json:"exit_code,omitempty"`
 }
 
-type Config struct {
-	webDataDir string
-	webEnvPath string
-	exploPath string
-}
-
 type manualRunState struct {
 	mu          sync.Mutex
 	running     bool
@@ -41,7 +35,7 @@ type runEvent struct {
 }
 
 type ManualRun struct {
-	cfg Config
+	cfg app.Config
 	state manualRunState
 }
 
@@ -49,11 +43,7 @@ var errRunAlreadyStarted = errors.New("run already in progress")
 
 func NewManualRun(cfg app.Config) *ManualRun {
 	return &ManualRun{
-		cfg: Config{
-			webDataDir: cfg.WebDataDir,
-			webEnvPath: cfg.WebEnvPath,
-			exploPath: cfg.ExploPath,
-		},
+		cfg: cfg,
 		state: newManualRunState(),
 	}
 }
@@ -64,7 +54,7 @@ func newManualRunState() manualRunState {
 
 func (mr *ManualRun) startRun(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, mr.cfg.exploPath, args...)
+	cmd := exec.CommandContext(ctx, mr.cfg.ExploPath, args...)
 	// Strip WEB_UI from env so the child process runs normally, not as web server.
 	env := make([]string, 0, len(os.Environ()))
 	for _, e := range os.Environ() {
