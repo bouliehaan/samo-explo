@@ -3,7 +3,6 @@ package backend
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -84,7 +83,7 @@ func NewServer(cfg config.ServerConfig) *Server {
 }
 
 func (s *Server) Start() error {
-	s.initServerLog()
+	s.manualRun.InitServerLog()
 	s.startJobs()
 	coversDir := filepath.Join(s.cfg.WebDataDir, "cache", "covers")
 	if _, err := os.Stat(coversDir); os.IsNotExist(err) {
@@ -176,17 +175,6 @@ func spaFS() (fs.FS, []byte) {
 // logPath returns the path to the single rolling log file.
 func (s *Server) logPath() string {
 	return filepath.Join(s.cfg.WebDataDir, "logs", "explo.log")
-}
-
-// initServerLog redirects the default slog handler so all server log output
-// goes to both stderr and the rolling log file.
-func (s *Server) initServerLog() {
-	lf, err := s.openRunLog()
-	if err != nil {
-		return
-	}
-	w := io.MultiWriter(os.Stderr, lf)
-	slog.SetDefault(slog.New(slog.NewTextHandler(w, nil)))
 }
 
 // openRunLog opens the single rolling log file in append mode.

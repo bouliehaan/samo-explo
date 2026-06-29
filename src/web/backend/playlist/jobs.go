@@ -10,13 +10,6 @@ import (
 	"github.com/go-co-op/gocron/v2"
 )
 
-type fileInfo struct {
-		path    string
-		size    int64
-		modTime time.Time
-}
-
-
 // RegisterCustomPlaylistRefresh registers a cache-refresh job for each custom playlist
 // using its stored schedule. Falls back to daily at 4 AM if no schedule is set.
 func (p *Playlist) RegisterCustomPlaylistRefresh(j *jobs.Jobs) error {

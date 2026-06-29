@@ -82,7 +82,7 @@ func (mr *ManualRun) logPath() string {
 
 // initServerLog redirects the default slog handler so all server log output
 // goes to both stderr and the rolling log file.
-func (mr *ManualRun) initServerLog() {
+func (mr *ManualRun) InitServerLog() {
 	lf, err := mr.openRunLog()
 	if err != nil {
 		return
