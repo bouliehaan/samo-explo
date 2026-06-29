@@ -169,19 +169,3 @@ func spaFS() (fs.FS, []byte) {
 	index, _ := fs.ReadFile(embedded, "index.html")
 	return embedded, index
 }
-
-// ── Logging ────────────────────────────────────────────────────────────────
-
-// logPath returns the path to the single rolling log file.
-func (s *Server) logPath() string {
-	return filepath.Join(s.cfg.WebDataDir, "logs", "explo.log")
-}
-
-// openRunLog opens the single rolling log file in append mode.
-func (s *Server) openRunLog() (*os.File, error) {
-	p := s.logPath()
-	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
-		return nil, err
-	}
-	return os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-}

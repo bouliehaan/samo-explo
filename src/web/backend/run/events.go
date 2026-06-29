@@ -76,7 +76,7 @@ func (mr *ManualRun) unsubscribeRun(ch chan runEvent) {
 }
 
 // logPath returns the path to the single rolling log file.
-func (mr *ManualRun) logPath() string {
+func (mr *ManualRun) LogPath() string {
 	return filepath.Join(mr.cfg.WebDataDir, "logs", "explo.log")
 }
 
@@ -93,7 +93,7 @@ func (mr *ManualRun) InitServerLog() {
 
 // openRunLog opens the single rolling log file in append mode.
 func (mr *ManualRun) openRunLog() (*os.File, error) {
-	p := mr.logPath()
+	p := mr.LogPath()
 	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 		return nil, err
 	}
