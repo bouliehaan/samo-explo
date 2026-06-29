@@ -48,6 +48,8 @@ func (mr *ManualRun) collectRunOutput(cmd *exec.Cmd, pr *os.File, lf *os.File) {
 	scanner := bufio.NewScanner(pr)
 	for scanner.Scan() {
 		line := scanner.Text()
+		// Echo to stdout so runs show up in docker logs.
+		_, _ = fmt.Fprintln(os.Stdout, line)
 		if lf != nil {
 			if _, err := fmt.Fprintln(lf, line); err != nil {
 				mr.appendRunLog("failed to write run output: " + err.Error())
