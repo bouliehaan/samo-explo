@@ -230,6 +230,19 @@ func (s *Settings) HandleWizardStep1(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	for k, v := range updates {
+		if v == "" {
+			if err := os.Unsetenv(k); err != nil {
+				slog.Warn("failed to unset env variable", "key", k, "err", err)
+			}
+		} else {
+			if err := os.Setenv(k, v); err != nil {
+				slog.Warn("failed to set env variable", "key", k, "err", err)
+			}
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
