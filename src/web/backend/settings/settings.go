@@ -112,7 +112,7 @@ func formatEnvValue(v string) string {
 		return v
 	}
 
-	if strings.ContainsAny(v, `"$#?' `) {
+	if strings.ContainsAny(v, `"$#?'`) {
 		// escape single quotes inside value
 		v = strings.ReplaceAll(v, `'`, `'\''`)
 		return fmt.Sprintf(`'%s'`, v)

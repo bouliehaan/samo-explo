@@ -187,7 +187,7 @@ func main() {
 	}
 	allTracks := append([]*models.Track(nil), tracks...)
 	if cfg.ServerCfg.WebDataDir != "" {
-		backend.WritePlaylistCache(cfg.ServerCfg.WebDataDir, cfg.Flags.Playlist, allTracks, nil)
+		playlist.WritePlaylistCache(cfg.ServerCfg.WebDataDir, cfg.Flags.Playlist, allTracks, nil)
 		slog.Info("Saved playlist", "playlist", cfg.Flags.Playlist, "tracks", len(allTracks))
 	}
 
@@ -224,8 +224,6 @@ func main() {
 		}
 	}
 
-<<<<<<< HEAD
-=======
 	if cfg.ServerCfg.Enabled {
 		added := make(map[string]bool)
 		for _, t := range tracks {
@@ -234,7 +232,6 @@ func main() {
 		playlist.WritePlaylistCache(cfg.Flags.CfgPath, cfg.Flags.Playlist, allTracks, added)
 	}
 
->>>>>>> 9129feb (move files under separate packages, add backend util functions)
 	if err := client.CreatePlaylist(tracks); err != nil {
 		slog.Warn(err.Error())
 	} else {
