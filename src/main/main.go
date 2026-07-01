@@ -5,6 +5,7 @@ import (
 	"explo/src/logging"
 	"explo/src/models"
 	"explo/src/web/backend"
+	"explo/src/web/backend/playlist"
 	"fmt"
 	"log"
 	"log/slog"
@@ -186,7 +187,7 @@ func main() {
 	}
 	allTracks := append([]*models.Track(nil), tracks...)
 	if cfg.ServerCfg.WebDataDir != "" {
-		backend.WritePlaylistCache(cfg.ServerCfg.WebDataDir, cfg.Flags.Playlist, allTracks, nil)
+		playlist.WritePlaylistCache(cfg.ServerCfg.WebDataDir, cfg.Flags.Playlist, allTracks, nil)
 		slog.Info("Saved playlist", "playlist", cfg.Flags.Playlist, "tracks", len(allTracks))
 	}
 
@@ -238,7 +239,7 @@ func uploadCustomPlaylistArtwork(cfg *config.Config, c *client.Client) {
 	if !strings.HasPrefix(cfg.Flags.Playlist, "custom-") {
 		return
 	}
-	cp := backend.GetCustomPlaylist(cfg.ServerCfg.WebDataDir, cfg.Flags.Playlist)
+	cp := playlist.GetCustomPlaylist(cfg.ServerCfg.WebDataDir, cfg.Flags.Playlist)
 	if cp == nil || cp.ArtworkURL == "" || cp.ArtworkUploaded {
 		return
 	}
@@ -246,7 +247,7 @@ func uploadCustomPlaylistArtwork(cfg *config.Config, c *client.Client) {
 	if !ok {
 		return
 	}
-	path := backend.CustomPlaylistArtworkPath(cfg.ServerCfg.WebDataDir, cp.ID)
+	path := playlist.CustomPlaylistArtworkPath(cfg.ServerCfg.WebDataDir, cp.ID)
 	if _, err := os.Stat(path); err != nil {
 		slog.Warn("custom-playlists: artwork not cached locally, skipping upload", "id", cp.ID, "path", path)
 		return
@@ -255,7 +256,7 @@ func uploadCustomPlaylistArtwork(cfg *config.Config, c *client.Client) {
 		slog.Warn("custom-playlists: failed to upload playlist artwork", "id", cp.ID, "err", err.Error())
 		return
 	}
-	if err := backend.MarkCustomPlaylistArtworkUploaded(cfg.ServerCfg.WebDataDir, cp.ID); err != nil {
+	if err := playlist.MarkCustomPlaylistArtworkUploaded(cfg.ServerCfg.WebDataDir, cp.ID); err != nil {
 		slog.Warn("custom-playlists: artwork upload succeeded but flag not persisted", "id", cp.ID, "err", err.Error())
 		return
 	}

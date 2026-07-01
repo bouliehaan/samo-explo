@@ -1,4 +1,4 @@
-package backend
+package playlist
 
 import (
 	"bytes"
@@ -6,6 +6,9 @@ import (
 	"explo/src/discovery"
 	"explo/src/models"
 	"explo/src/util"
+	"explo/src/web/backend/app"
+	"explo/src/web/backend/defs"
+	"explo/src/web/backend/settings"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -15,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -32,46 +34,28 @@ type PlaylistTrack struct {
 	CoverURL   string
 }
 
+
+type Playlist struct {
+	settings *settings.Settings
+	cfg app.Config
+}
+
 // validPlaylistTypes is derived from playlistDefs — no manual sync needed.
 var validPlaylistTypes = func() map[string]bool {
-	m := make(map[string]bool, len(playlistDefs))
-	for k := range playlistDefs {
+	m := make(map[string]bool, len(defs.PlaylistDefs))
+	for k := range defs.PlaylistDefs {
 		m[k] = true
 	}
 	return m
 }()
 
-var customIDRe = regexp.MustCompile(`^custom-[a-z0-9]+$`)
+func NewPlaylist(cfg app.Config, settings *settings.Settings) *Playlist {
+	return &Playlist{cfg: cfg}
+}
 
 // isValidPlaylistID accepts built-in playlist types and custom-* IDs (blocks path traversal).
 func isValidPlaylistID(t string) bool {
-	return validPlaylistTypes[t] || customIDRe.MatchString(t)
-}
-
-// handleGetPlaylist serves the tracklist cache written by explo during its last run.
-// Returns an empty track list if no cache exists yet.
-func (s *Server) handleGetPlaylist(w http.ResponseWriter, r *http.Request) {
-	playlistType := r.URL.Query().Get("type")
-	if !isValidPlaylistID(playlistType) {
-		http.Error(w, "unknown playlist type", http.StatusBadRequest)
-		return
-	}
-
-	cachePath := filepath.Join(s.cfg.WebDataDir, "cache", playlistType+".json")
-	if raw, err := os.ReadFile(cachePath); err == nil {
-		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write(raw); err != nil {
-			slog.Error("failed to write playlist response", "msg", err.Error())
-		}
-		return
-	}
-
-	// No cache yet — return an empty response. Run explo or use the prefetch
-	// endpoint to populate the cache.
-	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write([]byte(`{"tracks":[]}`)); err != nil {
-		slog.Error("failed to write empty playlist response", "msg", err.Error())
-	}
+	return validPlaylistTypes[t] || defs.CustomIDRe.MatchString(t)
 }
 
 // ── LB fallback ──────────────────────────────────────────────────────────────
@@ -176,57 +160,6 @@ func lbGet(url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-// handlePrefetchCovers fetches the most recent LB playlists for the given user,
-// writes a preliminary JSON cache for the web UI, then downloads cover art.
-// Runs in the background — returns 202 immediately.
-func (s *Server) handlePrefetchCovers(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		User      string   `json:"user"`
-		Playlists []string `json:"playlists"`
-		Source    string   `json:"source"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if body.User == "" || len(body.Playlists) == 0 {
-		http.Error(w, "user and playlists are required", http.StatusBadRequest)
-		return
-	}
-	forceRefresh := body.Source == "wizard"
-	w.WriteHeader(http.StatusAccepted)
-
-	slog.Info("prefetch: starting", "user", body.User, "playlists", body.Playlists, "source", body.Source, "force_refresh", forceRefresh)
-	go func() {
-		for _, pt := range body.Playlists {
-			if !validPlaylistTypes[pt] {
-				slog.Warn("prefetch: unknown playlist type", "type", pt)
-				continue
-			}
-			// Normal prefetch keeps an existing cache intact; wizard prefetch refreshes it
-			// after the user updates discovery settings.
-			cachePath := filepath.Join(s.cfg.WebDataDir, "cache", pt+".json")
-			if _, err := os.Stat(cachePath); err == nil && !forceRefresh {
-				slog.Info("prefetch: cache already exists, skipping", "playlist", pt)
-				continue
-			}
-			var tracks []PlaylistTrack
-			var err error
-			if pt == "on-repeat" {
-				tracks, err = fetchOnRepeatTracks(body.User)
-			} else {
-				tracks, err = fetchMostRecentLBPlaylist(body.User, pt)
-			}
-			if err != nil {
-				slog.Warn("prefetch: failed to fetch LB playlist", "type", pt, "err", err)
-				continue
-			}
-			slog.Info("prefetch: fetched tracks", "playlist", pt, "count", len(tracks))
-			writePrefetchCache(s.cfg.WebDataDir, pt, tracks)
-		}
-	}()
-}
-
 type cachedPrefetchTrack struct {
 	Rank       int    `json:"rank"`
 	Title      string `json:"title"`
@@ -284,23 +217,6 @@ type sitewideReleasesResp struct {
 			ReleaseMbid string `json:"release_mbid"`
 		} `json:"releases"`
 	} `json:"payload"`
-}
-
-// handleBackgroundArt returns a single cover art URL for use as a login page backdrop.
-// It picks a random local cover if any exist; otherwise it fetches the top global
-// albums from ListenBrainz and downloads cover art for the first available one.
-func (s *Server) handleBackgroundArt(w http.ResponseWriter, r *http.Request) {
-	coversDir := filepath.Join(s.cfg.WebDataDir, "cache", "covers")
-
-	url := randomLocalCoverHiRes(coversDir)
-	if url == "" {
-		url = fetchSitewideCovers(coversDir)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]string{"url": url}); err != nil {
-		slog.Error("background-art: failed to write response", "err", err.Error())
-	}
 }
 
 // randomLocalCoverHiRes picks a random cover from the existing library, ensures a

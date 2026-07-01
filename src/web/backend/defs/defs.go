@@ -1,6 +1,13 @@
-// place for confs/variables in use by the UI
+package defs
 
-package backend
+import (
+	"regexp"
+)
+// place for confs/variables in use by the UI or backend
+
+
+// Custom playlist regex validation
+var CustomIDRe = regexp.MustCompile(`^custom-[a-z0-9]+$`)
 
 // configFields is the single source of truth for the settings this web UI
 // currently owns. VisibleWhen / RequiredWhen drive the settings UI; the wizard
@@ -113,6 +120,21 @@ package backend
 	},
 } */
 
+// Option is a value/label pair for select-type fields.
+type Option struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// Condition expresses a dependency on another field's value.
+// All non-zero properties are ANDed together.
+type Condition struct {
+	Field    string   `json:"field"`
+	Eq       string   `json:"eq,omitempty"`       // field === value
+	In       []string `json:"in,omitempty"`       // field is one of values
+	Contains string   `json:"contains,omitempty"` // value appears in field's comma-separated list
+}
+
 // FieldDef describes a single configurable env var.
 // Injected into the page as window.__FIELDS__ for the settings UI to consume.
 type FieldDef struct {
@@ -140,7 +162,7 @@ type playlistDef struct {
 	DefaultFlags    string // CLI flags for the run
 }
 
-var playlistDefs = map[string]playlistDef{
+var PlaylistDefs = map[string]playlistDef{
 	"weekly-exploration": {"WEEKLY_EXPLORATION", "15 00 * * 2", "--playlist weekly-exploration"},
 	"weekly-jams":        {"WEEKLY_JAMS", "30 00 * * 1", "--playlist weekly-jams"},
 	"daily-jams":         {"DAILY_JAMS", "15 01 * * *", "--playlist daily-jams"},
@@ -148,7 +170,7 @@ var playlistDefs = map[string]playlistDef{
 }
 
 // allConfigKeys is the complete set of env keys the web UI reads and writes.
-var allConfigKeys = []string{
+var AllConfigKeys = []string{
 	"LISTENBRAINZ_USER", "LISTENBRAINZ_DISCOVERY",
 	"WEEKLY_EXPLORATION_SCHEDULE", "WEEKLY_EXPLORATION_FLAGS",
 	"WEEKLY_JAMS_SCHEDULE", "WEEKLY_JAMS_FLAGS",
