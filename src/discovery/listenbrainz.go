@@ -189,7 +189,10 @@ type ListenBrainz struct {
 
 func NewListenBrainz(cfg cfg.DiscoveryConfig, httpClient *util.HttpClient) *ListenBrainz {
 	authHeader := make(map[string]string)
-	authHeader["Authorization"] = fmt.Sprintf("Token %s", cfg.Listenbrainz.UserToken)
+	if cfg.Listenbrainz.UserToken != "" {
+		authHeader["Authorization"] = fmt.Sprintf("Token %s", cfg.Listenbrainz.UserToken)
+	}
+	
 	return &ListenBrainz{
 		cfg:        cfg.Listenbrainz,
 		Headers:    authHeader,
