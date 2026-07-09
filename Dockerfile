@@ -36,6 +36,9 @@ RUN apk add --no-cache \
 # Install ytmusicapi in the container
 RUN pip install --no-cache-dir ytmusicapi
 
+# Create user to set PUID/PGID values
+RUN useradd -ms /bin/sh explo
+
 # Set working directory
 WORKDIR /opt/explo/
 
