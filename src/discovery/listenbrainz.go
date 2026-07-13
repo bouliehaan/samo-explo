@@ -139,10 +139,11 @@ type Exploration struct {
 type TopRecordings struct {
 	Payload struct {
 		Recordings []struct {
-			ArtistName  string `json:"artist_name"`
-			ReleaseMbid string `json:"release_mbid"`
-			ReleaseName string `json:"release_name"`
-			TrackName   string `json:"track_name"`
+			ArtistName    string `json:"artist_name"`
+			RecordingMbid string `json:"recording_mbid"`
+			ReleaseMbid   string `json:"release_mbid"`
+			ReleaseName   string `json:"release_name"`
+			TrackName     string `json:"track_name"`
 		} `json:"recordings"`
 	} `json:"payload"`
 }
@@ -202,7 +203,19 @@ func NewListenBrainz(cfg cfg.DiscoveryConfig, httpClient *util.HttpClient) *List
 func (c *ListenBrainz) QueryTracks() ([]*models.Track, error) {
 	// Stats-based playlists bypass the discovery mode switch
 	if c.cfg.ImportPlaylist == "on-repeat" {
-		return c.getTopRecordings(c.cfg.User)
+		tracks, err := c.getTopRecordings(c.cfg.User)
+		if err != nil {
+			return nil, err
+		}
+		if c.cfg.EnrichTrackMetadata && len(tracks) > 0 {
+			enrichedTracks, err := c.enrichTracks(tracks, c.cfg.SingleArtist)
+			if err != nil {
+				slog.Warn("failed to enrich playlist metadata", "error", err)
+			} else {
+				tracks = enrichedTracks
+			}
+		}
+		return tracks, nil
 	}
 
 	var tracks []*models.Track
@@ -234,6 +247,14 @@ func (c *ListenBrainz) QueryTracks() ([]*models.Track, error) {
 		tracks, err = c.getTracks(mbids, c.cfg.SingleArtist)
 		if err != nil {
 			return nil, err
+		}
+		if c.cfg.EnrichTrackMetadata && len(tracks) > 0 {
+			enrichedTracks, err := c.enrichTracks(tracks, c.cfg.SingleArtist)
+			if err != nil {
+				slog.Warn("failed to enrich playlist metadata", "error", err)
+			} else {
+				tracks = enrichedTracks
+			}
 		}
 	}
 	return tracks, nil
@@ -285,12 +306,13 @@ func (c *ListenBrainz) getTopRecordings(user string) ([]*models.Track, error) {
 			coverURL = fmt.Sprintf("https://coverartarchive.org/release/%s/front-%s", rec.ReleaseMbid, c.cfg.CoverArtSize)
 		}
 		tracks = append(tracks, &models.Track{
-			Title:      rec.TrackName,
-			CleanTitle: rec.TrackName,
-			Artist:     rec.ArtistName,
-			MainArtist: rec.ArtistName,
-			Album:      rec.ReleaseName,
-			CoverURL:   coverURL,
+			Title:              rec.TrackName,
+			CleanTitle:         rec.TrackName,
+			Artist:             rec.ArtistName,
+			MainArtist:         rec.ArtistName,
+			Album:              rec.ReleaseName,
+			CoverURL:           coverURL,
+			MusicBrainzTrackID: rec.RecordingMbid,
 		})
 	}
 
