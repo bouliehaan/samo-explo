@@ -30,7 +30,7 @@ func (cfg *Config) GetFlags() error {
 	flag.StringVarP(&playlist, "playlist", "p", "weekly-exploration", "Playlist where to get tracks. Supported: weekly-exploration, weekly-jams, daily-jams, on-repeat")
 	flag.StringVarP(&downloadMode, "download-mode", "d", "normal", "Download mode: 'normal' (download only when track is not found locally), 'skip' (skip downloading, only use tracks already found locally), 'force' (always download, don't check for local tracks)")
 	flag.BoolVarP(&excludeLocal, "exclude-local", "e", false, "Exclude locally found tracks from the imported playlist")
-	flag.BoolVar(&replace, "replace", true, "Replace existing playlist with the same name")
+	flag.BoolVar(&replace, "replace-playlist", true, "Replace existing playlist with the same name")
 	flag.BoolVarP(&showVersion, "version", "v", false, "Print version and exit")
 	flag.StringVar(&searchMBID, "search-mbid", "", "Test Plex search for a single recording MBID (resolves via ListenBrainz, then searches your library)")
 	flag.BoolVar(&refreshOnly, "refresh-only", false, "Trigger alibrary rescan and exit; skips discovery and downloads")
@@ -42,7 +42,6 @@ func (cfg *Config) GetFlags() error {
 		fmt.Println(Version)
 		os.Exit(0)
 	}
-	replaceSet := flag.Lookup("replace").Changed
 	cfgSet := flag.Lookup("config").Changed
 	playlistSet := flag.Lookup("playlist").Changed
 
@@ -70,9 +69,6 @@ func (cfg *Config) GetFlags() error {
 	cfg.Flags.RefreshOnly = refreshOnly
 	cfg.Flags.CleanDownloads = cleanDownloads
 
-	// for deprecation purposes (can be removed at a later date)
-	cfg.Flags.ReplacePlaylistSet = replaceSet
-
 	return nil
 }
 
@@ -84,11 +80,7 @@ func (cfg *Config) MergeFlags() {
 		cfg.ServerCfg.WebEnvPath = cfg.Flags.CfgPath
 	}
 
-	if cfg.Flags.ReplacePlaylistSet {
-		cfg.ReplacePlaylist = cfg.Flags.ReplacePlaylist
-	} else {
-		cfg.ReplacePlaylist = cfg.ReplacePlaylistENV
-	}
+	cfg.ReplacePlaylist = cfg.Flags.ReplacePlaylist
 }
 
 func contains(valid []string, val string) bool {

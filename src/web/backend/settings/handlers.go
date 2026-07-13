@@ -191,6 +191,62 @@ func (s *Settings) HandleSaveEnrichMetadata(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusOK)
 }
 
+// HandleSaveReplacePlaylist injects or removes --replace-playlist=false from a playlist's FLAGS env var.
+func (s *Settings) HandleSaveReplacePlaylist(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name    string `json:"name"`
+		Replace bool   `json:"replace"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var envPrefix string
+	var defaultFlags string
+	if def, ok := defs.PlaylistDefs[body.Name]; ok {
+		envPrefix = def.EnvPrefix
+		defaultFlags = def.DefaultFlags
+	} else if defs.CustomIDRe.MatchString(body.Name) {
+		envPrefix = util.CustomEnvPrefix(body.Name)
+		defaultFlags = "--playlist " + body.Name
+	} else {
+		http.Error(w, "unknown playlist name", http.StatusBadRequest)
+		return
+	}
+
+	flagsKey := envPrefix + "_FLAGS"
+	const replaceFlag = "--replace-playlist=false"
+
+	data, err := os.ReadFile(s.cfg.WebEnvPath)
+	if err != nil && !os.IsNotExist(err) {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	current := s.ParseEnvText(string(data))
+	currentFlags := current[flagsKey]
+	if currentFlags == "" {
+		currentFlags = defaultFlags
+	}
+
+	hasFlag := strings.Contains(currentFlags, replaceFlag)
+	newFlags := currentFlags
+	if !body.Replace && !hasFlag {
+		newFlags = strings.TrimSpace(currentFlags + " " + replaceFlag)
+	} else if body.Replace && hasFlag {
+		newFlags = strings.TrimSpace(strings.ReplaceAll(currentFlags, replaceFlag, ""))
+		for strings.Contains(newFlags, "  ") {
+			newFlags = strings.ReplaceAll(newFlags, "  ", " ")
+		}
+	}
+
+	if err := s.UpdateEnvKeys(map[string]string{flagsKey: newFlags}, web.SampleEnv); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handleWizardStep1 saves discovery settings (username + enabled playlists with default schedules).
 func (s *Settings) HandleWizardStep1(w http.ResponseWriter, r *http.Request) {
 	var body struct {

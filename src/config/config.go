@@ -23,8 +23,7 @@ type Config struct {
 	NotifyCfg    NotifyConfig
 	ServerCfg    ServerConfig
 	Flags        Flags
-	ReplacePlaylistENV bool `env:"REPLACE_PLAYLIST" env-default:"true"`
-	ReplacePlaylist    bool
+	ReplacePlaylist bool
 	System       string `env:"EXPLO_SYSTEM"`
 	Debug        bool   `env:"DEBUG" env-default:"false"`
 	LogLevel     string `env:"LOG_LEVEL" env-default:"INFO"`
@@ -37,8 +36,7 @@ type Flags struct {
 	PlaylistSet	 bool
 	DownloadMode string
 	ExcludeLocal bool
-	ReplacePlaylist    bool
-	ReplacePlaylistSet bool
+	ReplacePlaylist bool
 	SearchMBID     string
 	RefreshOnly    bool
 	CleanDownloads bool
@@ -258,11 +256,7 @@ func (cfg *Config) HandleDeprecation() { //
 		slog.Warn("'DEBUG' variable is deprecated, please use LOG_LEVEL=DEBUG instead")
 		cfg.LogLevel = "DEBUG"
 	}
-	if cfg.Flags.ReplacePlaylistSet {
-		slog.Warn("--replace flag is deprecated, use the toggle in the UI instead")
-	}
-
-	if cfg.DiscoveryCfg.Listenbrainz.UserToken == "" {
+if cfg.DiscoveryCfg.Listenbrainz.UserToken == "" {
 		slog.Warn("Provide a ListenBrainz user token via Wizard or env (LISTENBRAINZ_USER_TOKEN)")
 	}
 
