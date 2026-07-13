@@ -247,6 +247,51 @@ func (s *Settings) HandleSaveReplacePlaylist(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 }
 
+// HandleSaveCleanDownloads injects or removes --clean-downloads from every playlist's FLAGS env var.
+func (s *Settings) HandleSaveCleanDownloads(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	const cleanFlag = "--clean-downloads"
+
+	data, err := os.ReadFile(s.cfg.WebEnvPath)
+	if err != nil && !os.IsNotExist(err) {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	current := s.ParseEnvText(string(data))
+
+	updates := map[string]string{}
+	for _, def := range defs.PlaylistDefs {
+		flagsKey := def.EnvPrefix + "_FLAGS"
+		flags := current[flagsKey]
+		if flags == "" {
+			flags = def.DefaultFlags
+		}
+		hasFlag := strings.Contains(flags, cleanFlag)
+		if body.Enabled && !hasFlag {
+			flags = strings.TrimSpace(flags + " " + cleanFlag)
+		} else if !body.Enabled && hasFlag {
+			flags = strings.TrimSpace(strings.ReplaceAll(flags, cleanFlag, ""))
+			for strings.Contains(flags, "  ") {
+				flags = strings.ReplaceAll(flags, "  ", " ")
+			}
+		}
+		updates[flagsKey] = flags
+	}
+
+	if err := s.UpdateEnvKeys(updates, web.SampleEnv); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handleWizardStep1 saves discovery settings (username + enabled playlists with default schedules).
 func (s *Settings) HandleWizardStep1(w http.ResponseWriter, r *http.Request) {
 	var body struct {

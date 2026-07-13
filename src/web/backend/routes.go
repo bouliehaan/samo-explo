@@ -54,6 +54,7 @@ func (s *Server) registerSettingRoutes() {
 	s.mux.Handle("POST /api/ui/config/path-template", s.auth(s.settings.HandleSavePathTemplate))
 	s.mux.Handle("POST /api/ui/config/enrich-metadata", s.auth(s.settings.HandleSaveEnrichMetadata))
 	s.mux.Handle("POST /api/ui/config/replace-playlist", s.auth(s.settings.HandleSaveReplacePlaylist))
+	s.mux.Handle("POST /api/ui/config/clean-downloads", s.auth(s.settings.HandleSaveCleanDownloads))
 
 	// Path template presets: GET list, POST add; DELETE per name under prefix
 	s.mux.Handle("api/ui/path-templates", s.auth(s.settings.HandlePathTemplates))
