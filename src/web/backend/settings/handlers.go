@@ -1,20 +1,20 @@
 package settings
 
 import (
-	"net/http"
 	"encoding/json"
-	"os"
-	"log/slog"
+	"fmt"
 	"io"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"syscall"
 	"time"
-	"fmt"
-	"strings"
-	"net/url"
 
+	"explo/src/util"
 	"explo/src/web"
 	"explo/src/web/backend/defs"
-	"explo/src/util"
 )
 
 // handleGetConfig returns resolved config as JSON: { values, sources }.
@@ -118,6 +118,23 @@ func (s *Settings) HandleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown playlist name", http.StatusBadRequest)
 		return
 	}
+	var currentFlags string
+	if data, err := os.ReadFile(s.cfg.WebEnvPath); err == nil {
+		currentFlags = s.ParseEnvText(string(data))[envPrefix+"_FLAGS"]
+	}
+	mergeFlags := func(base string) string {
+		injected := []string{"--replace-playlist=false", "--clean-downloads"}
+		var extras []string
+		for _, f := range injected {
+			if strings.Contains(currentFlags, f) {
+				extras = append(extras, f)
+			}
+		}
+		if len(extras) == 0 {
+			return base
+		}
+		return base + " " + strings.Join(extras, " ")
+	}
 
 	updates := map[string]string{}
 	if !body.Enabled {
@@ -127,7 +144,7 @@ func (s *Settings) HandleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 	} else if body.Day == -2 {
 		// "Never" — keep playlist active for manual runs but remove auto-schedule
 		updates[envPrefix+"_SCHEDULE"] = ""
-		updates[envPrefix+"_FLAGS"] = defaultFlags
+		updates[envPrefix+"_FLAGS"] = mergeFlags(defaultFlags)
 	} else {
 		dom := "*"
 		dow := "*"
@@ -137,7 +154,7 @@ func (s *Settings) HandleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 			dow = fmt.Sprintf("%d", body.Day)
 		}
 		updates[envPrefix+"_SCHEDULE"] = fmt.Sprintf("%d %d %s * %s", body.Minute, body.Hour, dom, dow)
-		updates[envPrefix+"_FLAGS"] = defaultFlags
+		updates[envPrefix+"_FLAGS"] = mergeFlags(defaultFlags)
 	}
 
 	if err := s.UpdateEnvKeys(updates, web.SampleEnv); err != nil {
@@ -315,9 +332,9 @@ func (s *Settings) HandleWizardStep1(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updates := map[string]string{
-		"LISTENBRAINZ_USER":      body.User,
+		"LISTENBRAINZ_USER":       body.User,
 		"LISTENBRAINZ_USER_TOKEN": body.UserToken,
-		"LISTENBRAINZ_DISCOVERY": body.DiscoveryMode,
+		"LISTENBRAINZ_DISCOVERY":  body.DiscoveryMode,
 	}
 	for name, def := range defs.PlaylistDefs {
 		if enabled[name] {
@@ -352,19 +369,19 @@ func (s *Settings) HandleWizardStep1(w http.ResponseWriter, r *http.Request) {
 // handleWizardStep2 saves media system configuration.
 func (s *Settings) HandleWizardStep2(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		System         string `json:"system"`
-		URL            string `json:"url"`
-		APIKey         string `json:"api_key"`
-		LibraryName    string `json:"library_name"`
-		Username       string `json:"username"`
-		Password       string `json:"password"`
-		PlaylistDir    string `json:"playlist_dir"`
-		Sleep          string `json:"sleep"`
-		AdminAPIKey	   string `json:"admin_api_key"`
+		System              string `json:"system"`
+		URL                 string `json:"url"`
+		APIKey              string `json:"api_key"`
+		LibraryName         string `json:"library_name"`
+		Username            string `json:"username"`
+		Password            string `json:"password"`
+		PlaylistDir         string `json:"playlist_dir"`
+		Sleep               string `json:"sleep"`
+		AdminAPIKey         string `json:"admin_api_key"`
 		AdminSystemUsername string `json:"admin_system_username"`
 		AdminSystemPassword string `json:"admin_system_password"`
 
-		PublicPlaylist bool   `json:"public_playlist"`
+		PublicPlaylist bool `json:"public_playlist"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -382,18 +399,18 @@ func (s *Settings) HandleWizardStep2(w http.ResponseWriter, r *http.Request) {
 		publicPlaylist = "true"
 	}
 	updates := map[string]string{
-		"EXPLO_SYSTEM":    body.System,
-		"SYSTEM_URL":      body.URL,
-		"API_KEY":         body.APIKey,
-		"LIBRARY_NAME":    body.LibraryName,
-		"SYSTEM_USERNAME": body.Username,
-		"SYSTEM_PASSWORD": body.Password,
-		"PLAYLIST_DIR":    body.PlaylistDir,
-		"SLEEP":           body.Sleep,
-		"PUBLIC_PLAYLIST": publicPlaylist,
+		"EXPLO_SYSTEM":          body.System,
+		"SYSTEM_URL":            body.URL,
+		"API_KEY":               body.APIKey,
+		"LIBRARY_NAME":          body.LibraryName,
+		"SYSTEM_USERNAME":       body.Username,
+		"SYSTEM_PASSWORD":       body.Password,
+		"PLAYLIST_DIR":          body.PlaylistDir,
+		"SLEEP":                 body.Sleep,
+		"PUBLIC_PLAYLIST":       publicPlaylist,
 		"ADMIN_SYSTEM_USERNAME": body.AdminSystemUsername,
 		"ADMIN_SYSTEM_PASSWORD": body.AdminSystemPassword,
-		"ADMIN_SYSTEM_APIKEY": body.AdminAPIKey,
+		"ADMIN_SYSTEM_APIKEY":   body.AdminAPIKey,
 	}
 
 	if err := s.UpdateEnvKeys(updates, web.SampleEnv); err != nil {
