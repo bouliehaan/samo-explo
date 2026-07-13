@@ -82,10 +82,10 @@ function useSSE({ onLine, onDone }) {
 }
 
 const PLAYLISTS = [
-  { value: 'weekly-exploration', name: 'Weekly Exploration', scheduleKey: 'WEEKLY_EXPLORATION_SCHEDULE', defaultDay: 2,  defaultHour: 0,  defaultMinute: 15 },
-  { value: 'weekly-jams',        name: 'Weekly Jams',        scheduleKey: 'WEEKLY_JAMS_SCHEDULE',        defaultDay: 1,  defaultHour: 0,  defaultMinute: 30 },
-  { value: 'daily-jams',         name: 'Daily Jams',         scheduleKey: 'DAILY_JAMS_SCHEDULE',         defaultDay: -1, defaultHour: 1,  defaultMinute: 15 },
-  { value: 'on-repeat',          name: 'On Repeat',          scheduleKey: 'ON_REPEAT_SCHEDULE',          defaultDay: 100, defaultHour: 12, defaultMinute: 0, fixedSchedule: true },
+  { value: 'weekly-exploration', name: 'Weekly Exploration', scheduleKey: 'WEEKLY_EXPLORATION_SCHEDULE', flagsKey: 'WEEKLY_EXPLORATION_FLAGS', defaultDay: 2,  defaultHour: 0,  defaultMinute: 15 },
+  { value: 'weekly-jams',        name: 'Weekly Jams',        scheduleKey: 'WEEKLY_JAMS_SCHEDULE',        flagsKey: 'WEEKLY_JAMS_FLAGS',        defaultDay: 1,  defaultHour: 0,  defaultMinute: 30 },
+  { value: 'daily-jams',         name: 'Daily Jams',         scheduleKey: 'DAILY_JAMS_SCHEDULE',         flagsKey: 'DAILY_JAMS_FLAGS',         defaultDay: -1, defaultHour: 1,  defaultMinute: 15 },
+  { value: 'on-repeat',          name: 'On Repeat',          scheduleKey: 'ON_REPEAT_SCHEDULE',          flagsKey: 'ON_REPEAT_FLAGS',          defaultDay: 100, defaultHour: 12, defaultMinute: 0, fixedSchedule: true },
 ]
 
 const SCHEDULE_DAYS = [
@@ -202,6 +202,7 @@ function CustomPlaylistsSection({
 
 function HomeSection() {
   const [schedules, setSchedules] = useState(null)
+  const [replacePlaylists, setReplacePlaylists] = useState({})
   const [scheduleSaveStatus, setScheduleSaveStatus] = useState({})
   const [lbUser, setLbUser] = useState('')
   const [openTracklist, setOpenTracklist] = useState(null)
@@ -226,6 +227,12 @@ function HomeSection() {
     ]).then(([{ values }, customList]) => {
       setLbUser(values.LISTENBRAINZ_USER || '')
       setCustomPlaylists(customList)
+
+      const rp = {}
+      for (const p of PLAYLISTS) {
+        rp[p.value] = !(values[p.flagsKey] || '').includes('--replace-playlist=false')
+      }
+      setReplacePlaylists(rp)
 
       const s = {}
       for (const p of PLAYLISTS) {
@@ -309,6 +316,14 @@ function HomeSection() {
       onCancelEdit: () => setSchedules(prev => ({
         ...prev, [id]: { ...prev[id], editing: false }
       })),
+      replacePlaylist: replacePlaylists[id] ?? true,
+      onReplaceToggle: () => {
+        const next = !(replacePlaylists[id] ?? true)
+        setReplacePlaylists(prev => ({ ...prev, [id]: next }))
+        saveReplacePlaylist(id, next).catch(() =>
+          setReplacePlaylists(prev => ({ ...prev, [id]: !next }))
+        )
+      },
       onDayChange: day => setSchedules(prev => ({
         ...prev, [id]: { ...prev[id], day }
       })),
@@ -326,7 +341,7 @@ function HomeSection() {
     setLogEntries([])
     setStatus('running…')
     try {
-      await startRun(playlist, dlmode)
+      await startRun(playlist, dlmode, replacePlaylists[playlist] ?? true)
       connect()
     } catch (e) {
       if (e.conflict) { setStatus('already running'); setRunning(false); return }
@@ -508,7 +523,6 @@ function DownloadPathSection() {
   const [showModal, setShowModal] = useState(false)
   const [openMenuIdx, setOpenMenuIdx] = useState(null)
   const [enrichEnabled, setEnrichEnabled] = useState(false)
-  const [replacePlaylist, setReplacePlaylist] = useState(true)
   const [cleanDownloads, setCleanDownloads] = useState(false)
   const [templateEnabled, setTemplateEnabled] = useState(false)
 
@@ -522,7 +536,6 @@ function DownloadPathSection() {
         ...jsonPresets,
       ]
       setEnrichEnabled(values.ENRICH_TRACK_METADATA === 'true')
-      setReplacePlaylist(values.REPLACE_PLAYLIST !== 'false')
       const anyFlags = values.WEEKLY_EXPLORATION_FLAGS || values.WEEKLY_JAMS_FLAGS || values.DAILY_JAMS_FLAGS || values.ON_REPEAT_FLAGS || ''
       setCleanDownloads(anyFlags.includes('--clean-downloads'))
       const t = values.PATH_TEMPLATE || ''
@@ -550,12 +563,6 @@ function DownloadPathSection() {
     const next = !enrichEnabled
     setEnrichEnabled(next)
     try { await saveEnrichMetadata(next) } catch { setEnrichEnabled(!next) }
-  }
-
-  const handleReplaceToggle = async () => {
-    const next = !replacePlaylist
-    setReplacePlaylist(next)
-    try { await saveReplacePlaylist(next) } catch { setReplacePlaylist(!next) }
   }
 
   const handleCleanToggle = async () => {
@@ -646,22 +653,6 @@ function DownloadPathSection() {
           className={`relative inline-flex h-[22px] w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${enrichEnabled ? 'bg-accent' : 'bg-[#383838]'}`}
         >
           <span className={`inline-block h-[18px] w-[18px] my-[2px] rounded-full bg-white shadow transition-transform duration-200 ${enrichEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} />
-        </button>
-      </div>
-
-      {/* Replace playlist toggle */}
-      <div className="flex items-start justify-between mt-3 mb-1 gap-4">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[13px] text-white">Update playlist in place</span>
-          <span className="text-[11px] text-muted">Keep a single playlist per type and refresh it with new recommendations each run. When off, a new playlist is created every time and previous ones are kept.</span>
-        </div>
-        <button
-          role="switch"
-          aria-checked={replacePlaylist}
-          onClick={handleReplaceToggle}
-          className={`relative inline-flex h-[22px] w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${replacePlaylist ? 'bg-accent' : 'bg-[#383838]'}`}
-        >
-          <span className={`inline-block h-[18px] w-[18px] my-[2px] rounded-full bg-white shadow transition-transform duration-200 ${replacePlaylist ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} />
         </button>
       </div>
 

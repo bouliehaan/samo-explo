@@ -114,10 +114,11 @@ export async function fetchBrowse(path) {
   return res.json()
 }
 
-export async function startRun(playlist, download_mode) {
+export async function startRun(playlist, download_mode, replace = true) {
   const form = new FormData()
   form.set('playlist', playlist)
   form.set('download_mode', download_mode)
+  form.set('replace_playlist', replace ? 'true' : 'false')
   const res = await apiFetch('/api/ui/run', { method: 'POST', body: form })
   if (res.status === 409) throw Object.assign(new Error('already running'), { conflict: true })
   if (!res.ok) throw new Error(await res.text())
@@ -229,11 +230,11 @@ export async function saveEnrichMetadata(enabled) {
   if (!res.ok) throw new Error(await res.text())
 }
 
-export async function saveReplacePlaylist(enabled) {
+export async function saveReplacePlaylist(name, replace) {
   const res = await apiFetch('/api/ui/config/replace-playlist', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify({ name, replace }),
   })
   if (!res.ok) throw new Error(await res.text())
 }
