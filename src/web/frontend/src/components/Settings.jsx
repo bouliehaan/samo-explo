@@ -15,7 +15,7 @@ import {
   fetchConfig, fetchConfigRaw, saveConfig, resetConfig,
   saveSchedule, startRun, stopRun, fetchRunStatus, fetchLogs,
   fetchCustomPlaylists, deleteCustomPlaylist, savePathTemplate, saveEnrichMetadata,
-  savePersist, saveCleanDownloads,
+  saveReplacePlaylist, saveCleanDownloads,
   fetchPathTemplatePresets, addPathTemplatePreset, deletePathTemplatePreset,
 } from '../lib/api'
 import { parseSlogLine, cronToFields, highlightEnv } from '../lib/utils'
@@ -34,7 +34,7 @@ const tabBtnCls = active =>
 
 // ── Home Tab ──────────────────────────────────────────────────────────────────
 // Manages scheduled playlists, manual runs, and live run output.
-// Fetches its own config on mount to initialise schedule state and locked keys.
+// Fetches its own config on mount to initialise schedule state.
 
 // Streams live run output from /api/ui/run/events
 function useSSE({ onLine, onDone }) {
@@ -82,10 +82,10 @@ function useSSE({ onLine, onDone }) {
 }
 
 const PLAYLISTS = [
-  { value: 'weekly-exploration', name: 'Weekly Exploration', scheduleKey: 'WEEKLY_EXPLORATION_SCHEDULE', defaultDay: 2,  defaultHour: 0,  defaultMinute: 15 },
-  { value: 'weekly-jams',        name: 'Weekly Jams',        scheduleKey: 'WEEKLY_JAMS_SCHEDULE',        defaultDay: 1,  defaultHour: 0,  defaultMinute: 30 },
-  { value: 'daily-jams',         name: 'Daily Jams',         scheduleKey: 'DAILY_JAMS_SCHEDULE',         defaultDay: -1, defaultHour: 1,  defaultMinute: 15 },
-  { value: 'on-repeat',          name: 'On Repeat',          scheduleKey: 'ON_REPEAT_SCHEDULE',          defaultDay: 100, defaultHour: 12, defaultMinute: 0, fixedSchedule: true },
+  { value: 'weekly-exploration', name: 'Weekly Exploration', scheduleKey: 'WEEKLY_EXPLORATION_SCHEDULE', flagsKey: 'WEEKLY_EXPLORATION_FLAGS', defaultDay: 2,  defaultHour: 0,  defaultMinute: 15 },
+  { value: 'weekly-jams',        name: 'Weekly Jams',        scheduleKey: 'WEEKLY_JAMS_SCHEDULE',        flagsKey: 'WEEKLY_JAMS_FLAGS',        defaultDay: 1,  defaultHour: 0,  defaultMinute: 30 },
+  { value: 'daily-jams',         name: 'Daily Jams',         scheduleKey: 'DAILY_JAMS_SCHEDULE',         flagsKey: 'DAILY_JAMS_FLAGS',         defaultDay: -1, defaultHour: 1,  defaultMinute: 15 },
+  { value: 'on-repeat',          name: 'On Repeat',          scheduleKey: 'ON_REPEAT_SCHEDULE',          flagsKey: 'ON_REPEAT_FLAGS',          defaultDay: 100, defaultHour: 12, defaultMinute: 0, fixedSchedule: true },
 ]
 
 const SCHEDULE_DAYS = [
@@ -202,7 +202,7 @@ function CustomPlaylistsSection({
 
 function HomeSection() {
   const [schedules, setSchedules] = useState(null)
-  const [envSources, setEnvSources] = useState({})
+  const [replacePlaylists, setReplacePlaylists] = useState({})
   const [scheduleSaveStatus, setScheduleSaveStatus] = useState({})
   const [lbUser, setLbUser] = useState('')
   const [openTracklist, setOpenTracklist] = useState(null)
@@ -211,8 +211,6 @@ function HomeSection() {
 
   const [playlist, setPlaylist] = useState('weekly-exploration')
   const [dlmode, setDlmode] = useState('normal')
-  const [noPersist, setNoPersist] = useState(false)
-  const [excludeLocal, setExcludeLocal] = useState(false)
 
   const [running, setRunning] = useState(false)
   const [status, setStatus] = useState('')
@@ -226,11 +224,15 @@ function HomeSection() {
     Promise.all([
       fetchConfig(),
       fetchCustomPlaylists().catch(() => [])
-    ]).then(([{ values, sources }, customList]) => {
-      setEnvSources(sources || {})
+    ]).then(([{ values }, customList]) => {
       setLbUser(values.LISTENBRAINZ_USER || '')
-      setNoPersist((values.WEEKLY_EXPLORATION_FLAGS || values.WEEKLY_JAMS_FLAGS || values.DAILY_JAMS_FLAGS || values.ON_REPEAT_FLAGS || '').includes('--persist=false'))
       setCustomPlaylists(customList)
+
+      const rp = {}
+      for (const p of PLAYLISTS) {
+        rp[p.value] = !(values[p.flagsKey] || '').includes('--replace-playlist=false')
+      }
+      setReplacePlaylists(rp)
 
       const s = {}
       for (const p of PLAYLISTS) {
@@ -280,11 +282,6 @@ function HomeSection() {
     return () => disconnect()
   }, [connect, disconnect])
 
-  const isScheduleLocked = id => {
-    const p = PLAYLISTS.find(p => p.value === id)
-    return p ? envSources[p.scheduleKey] === 'env' : false
-  }
-
   const nextRunText = id => {
     const s = schedules[id]
     if (!s?.enabled) return 'Disabled'
@@ -311,7 +308,6 @@ function HomeSection() {
         ...prev, [id]: { ...prev[id], editing: !prev[id].editing }
       })),
       onSave: () => {
-        if (isScheduleLocked(id)) return
         saveSchedule(id, s.enabled, s.day, s.hour, s.minute)
           .then(() => flashStatus(id, 'Saved.'))
           .catch(() => flashStatus(id, 'Error saving.'))
@@ -320,6 +316,14 @@ function HomeSection() {
       onCancelEdit: () => setSchedules(prev => ({
         ...prev, [id]: { ...prev[id], editing: false }
       })),
+      replacePlaylist: replacePlaylists[id] ?? true,
+      onReplaceToggle: () => {
+        const next = !(replacePlaylists[id] ?? true)
+        setReplacePlaylists(prev => ({ ...prev, [id]: next }))
+        saveReplacePlaylist(id, next).catch(() =>
+          setReplacePlaylists(prev => ({ ...prev, [id]: !next }))
+        )
+      },
       onDayChange: day => setSchedules(prev => ({
         ...prev, [id]: { ...prev[id], day }
       })),
@@ -337,7 +341,7 @@ function HomeSection() {
     setLogEntries([])
     setStatus('running…')
     try {
-      await startRun(playlist, dlmode, !noPersist, excludeLocal)
+      await startRun(playlist, dlmode, replacePlaylists[playlist] ?? true)
       connect()
     } catch (e) {
       if (e.conflict) { setStatus('already running'); setRunning(false); return }
@@ -365,7 +369,6 @@ function HomeSection() {
               key={p.value}
               playlist={p}
               {...scheduleProps(p.value)}
-              locked={isScheduleLocked(p.value)}
               fixedSchedule={!!p.fixedSchedule}
               index={i}
               nextRunText={nextRunText(p.value)}
@@ -381,7 +384,7 @@ function HomeSection() {
             playlist={openTracklist}
             refreshTick={refreshTick}
             onRun={async () => {
-              await startRun(openTracklist, 'normal', true, false)
+              await startRun(openTracklist, 'normal')
               setRunning(true)
               setStatus('running…')
               setLogEntries([])
@@ -422,7 +425,7 @@ function HomeSection() {
           setShowImportModal(false)
         }}
         onSync={async (id) => {
-          await startRun(id, 'normal', true, false)
+          await startRun(id, 'normal')
           setRunning(true)
           setStatus('running…')
           setLogEntries([])
@@ -452,7 +455,7 @@ function HomeSection() {
               <button
                 key={m.value}
                 onClick={() => setDlmode(m.value)}
-                className={`px-3 py-1.5 text-[12px] rounded-[6px] border bg-surface cursor-pointer transition-colors
+                className={`px-3 py-1.5 text-[12px] rounded-[6px] border bg-well cursor-pointer transition-colors
                   ${dlmode === m.value ? 'border-accent text-accent' : 'border-ui-border text-muted hover:border-[#404040] hover:text-white'}`}
               >
                 {m.name}
@@ -470,12 +473,6 @@ function HomeSection() {
             {customPlaylists.length > 0 && <option disabled>---</option>}
             {customPlaylists.map(cp => <option key={cp.id} value={cp.id}>{cp.name}</option>)}
           </select>
-          <label className="flex items-center gap-1.5 text-[12px] text-muted cursor-pointer" title="When unchecked (default), previously generated playlists and their tracks are kept and added to over time. When checked, the playlist is wiped and rebuilt from scratch on each run.">
-            <input type="checkbox" checked={noPersist} onChange={e => setNoPersist(e.target.checked)} /> don't persist
-          </label>
-          <label className="flex items-center gap-1.5 text-[12px] text-muted cursor-pointer" title="When checked, tracks already found in your local library are excluded from the generated playlist.">
-            <input type="checkbox" checked={excludeLocal} onChange={e => setExcludeLocal(e.target.checked)} /> exclude local
-          </label>
         </div>
         <div className="flex gap-2.5 items-center">
           <Button onClick={handleRun} disabled={running}>▶ Run</Button>
@@ -526,7 +523,6 @@ function DownloadPathSection() {
   const [showModal, setShowModal] = useState(false)
   const [openMenuIdx, setOpenMenuIdx] = useState(null)
   const [enrichEnabled, setEnrichEnabled] = useState(false)
-  const [replacePlaylist, setReplacePlaylist] = useState(true)
   const [cleanDownloads, setCleanDownloads] = useState(false)
   const [templateEnabled, setTemplateEnabled] = useState(false)
 
@@ -541,7 +537,6 @@ function DownloadPathSection() {
       ]
       setEnrichEnabled(values.ENRICH_TRACK_METADATA === 'true')
       const anyFlags = values.WEEKLY_EXPLORATION_FLAGS || values.WEEKLY_JAMS_FLAGS || values.DAILY_JAMS_FLAGS || values.ON_REPEAT_FLAGS || ''
-      setReplacePlaylist(anyFlags.includes('--persist=false'))
       setCleanDownloads(anyFlags.includes('--clean-downloads'))
       const t = values.PATH_TEMPLATE || ''
       if (t) {
@@ -568,12 +563,6 @@ function DownloadPathSection() {
     const next = !enrichEnabled
     setEnrichEnabled(next)
     try { await saveEnrichMetadata(next) } catch { setEnrichEnabled(!next) }
-  }
-
-  const handleReplaceToggle = async () => {
-    const next = !replacePlaylist
-    setReplacePlaylist(next)
-    try { await savePersist(!next) } catch { setReplacePlaylist(!next) }
   }
 
   const handleCleanToggle = async () => {
@@ -664,22 +653,6 @@ function DownloadPathSection() {
           className={`relative inline-flex h-[22px] w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${enrichEnabled ? 'bg-accent' : 'bg-[#383838]'}`}
         >
           <span className={`inline-block h-[18px] w-[18px] my-[2px] rounded-full bg-white shadow transition-transform duration-200 ${enrichEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} />
-        </button>
-      </div>
-
-      {/* Replace playlist toggle */}
-      <div className="flex items-start justify-between mt-3 mb-1 gap-4">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[13px] text-white">Update playlist in place</span>
-          <span className="text-[11px] text-muted">Keep a single playlist per type and refresh it with new recommendations each run. When off, a new playlist is created every time and previous ones are kept.</span>
-        </div>
-        <button
-          role="switch"
-          aria-checked={replacePlaylist}
-          onClick={handleReplaceToggle}
-          className={`relative inline-flex h-[22px] w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${replacePlaylist ? 'bg-accent' : 'bg-[#383838]'}`}
-        >
-          <span className={`inline-block h-[18px] w-[18px] my-[2px] rounded-full bg-white shadow transition-transform duration-200 ${replacePlaylist ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} />
         </button>
       </div>
 

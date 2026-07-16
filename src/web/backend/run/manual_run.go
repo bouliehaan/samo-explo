@@ -164,7 +164,7 @@ func (mr *ManualRun) finishRun(code int) {
 }
 
 // helper to build flag arguments
-func buildArgs(playlist, downloadMode string, noPersist, excludeLocal bool, WebEnvPath string) []string {
+func buildArgs(playlist, downloadMode, WebEnvPath string, replacePlaylist bool) []string {
 	args := []string{"--config", WebEnvPath}
 	if playlist != "" {
 		args = append(args, "--playlist", playlist)
@@ -172,11 +172,8 @@ func buildArgs(playlist, downloadMode string, noPersist, excludeLocal bool, WebE
 	if downloadMode != "" {
 		args = append(args, "--download-mode", downloadMode)
 	}
-	if noPersist {
-		args = append(args, "--persist=false")
-	}
-	if excludeLocal {
-		args = append(args, "--exclude-local")
+	if !replacePlaylist {
+		args = append(args, "--replace-playlist=false")
 	}
 	return args
 }

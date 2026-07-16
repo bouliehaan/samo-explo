@@ -358,7 +358,6 @@ const NOISE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'
 export function PlaylistCard({
   playlist,
   schedule: s,
-  locked,
   fixedSchedule = false,
   index = 0,
   nextRunText,
@@ -373,6 +372,8 @@ export function PlaylistCard({
   tracklistOpen,
   onTracklistToggle,
   onDelete,
+  replacePlaylist = true,
+  onReplaceToggle,
   trackId,
   artworkUrl,
   sourceUrl,
@@ -445,9 +446,10 @@ export function PlaylistCard({
   const [deleteTracksChecked, setDeleteTracksChecked] = useState(false)
   const [copyLabel, setCopyLabel] = useState('Copy URL')
   const [cardHovered, setCardHovered] = useState(false)
+  const [replaceInfoOpen, setReplaceInfoOpen] = useState(false)
   const menuBtnRef = useRef(null)
-  const canEdit = !locked && !fixedSchedule && !!onToggleEdit
-  const hasMenu = canEdit || !!onDelete || !!sourceUrl
+  const canEdit = !fixedSchedule && !!onToggleEdit
+  const hasMenu = canEdit || !!onDelete || !!sourceUrl || !!onReplaceToggle
 
   useEffect(() => {
     if (!menuOpen) { setConfirmDelete(false); setDeleteTracksChecked(false); return }
@@ -601,25 +603,16 @@ export function PlaylistCard({
 
         {/* Toggle — bottom right */}
         {onToggle && (
-          <>
-            <label
-              onClick={e => e.stopPropagation()}
-              style={{
-                position: 'absolute', bottom: 8, right: 8,
-                display: 'flex', alignItems: 'center',
-                cursor: locked ? 'not-allowed' : 'pointer',
-                opacity: locked ? 0.5 : 1,
-              }}
-            >
-              <Toggle checked={s.enabled} onChange={onToggle} disabled={locked} tiny />
-            </label>
-            {locked && (
-              <span style={{
-                position: 'absolute', bottom: 10, right: 30,
-                fontSize: 7, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.3)',
-              }}>ENV</span>
-            )}
-          </>
+          <label
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'absolute', bottom: 8, right: 8,
+              display: 'flex', alignItems: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <Toggle checked={s.enabled} onChange={onToggle} tiny />
+          </label>
         )}
       </div>
 
@@ -681,6 +674,38 @@ export function PlaylistCard({
             >
               Edit Schedule
             </button>
+          )}
+          {onReplaceToggle && (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <button
+                onClick={e => { e.stopPropagation(); onReplaceToggle() }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  width: '100%', textAlign: 'left',
+                  background: 'none', border: 'none',
+                  padding: '8px 14px', fontSize: 13, color: '#c0c0c0',
+                  cursor: 'pointer', gap: 10,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#1a1a1a' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'none' }}
+              >
+                <span>
+                  Save each run as new playlist<span
+                    role="button"
+                    onClick={e => { e.stopPropagation(); setReplaceInfoOpen(o => !o) }}
+                    onMouseEnter={e => { e.stopPropagation(); setReplaceInfoOpen(true) }}
+                    onMouseLeave={e => { e.stopPropagation(); setReplaceInfoOpen(false) }}
+                    style={{ fontSize: 11, color: replaceInfoOpen ? '#999' : '#555', cursor: 'pointer', userSelect: 'none', verticalAlign: 'super', marginLeft: 4 }}
+                  >ⓘ</span>
+                </span>
+                <Toggle checked={!replacePlaylist} onChange={() => {}} tiny />
+              </button>
+              {replaceInfoOpen && (
+                <span style={{ fontSize: 11, color: '#666', padding: '4px 14px 10px', lineHeight: 1.4 }}>
+                  When on, creates a new dated playlist each run instead of overwriting.
+                </span>
+              )}
+            </div>
           )}
           {onDelete && !confirmDelete && (
             <button
@@ -748,7 +773,7 @@ export function PlaylistCard({
       </AnimatePresence>
 
       {/* Inline schedule editor */}
-      {!locked && !fixedSchedule && (
+      {!fixedSchedule && (
         <ScheduleEditor
           schedule={s}
           onSave={onSave}
