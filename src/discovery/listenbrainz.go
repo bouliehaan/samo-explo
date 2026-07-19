@@ -708,6 +708,7 @@ func (c *ListenBrainz) parsePlaylist(identifier string, singleArtist bool) (stri
 					titleargs.FeatArtists = append(titleargs.FeatArtists, artist.ArtistCreditName)
 				}
 				title = c.buildTrackTitle(titleargs)
+                artist = trackArtists[0].ArtistCreditName
 			}
 		}
 
