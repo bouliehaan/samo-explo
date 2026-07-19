@@ -592,7 +592,7 @@ func (c *Plex) getPlexSong(track *models.Track, metadata []SongMetadata) (string
 
 		normalizedSongTitle := util.NormalizeTitle(md.Title)
 		musicBrainzMatch := mbid != "" && track.MusicBrainzReleaseTrackID == mbid
-		titleMatch := normalizedSongTitle == normalizedCleanTitle || md.Title == track.Title
+		titleMatch := normalizedSongTitle == normalizedCleanTitle
 		albumMatch := util.AlnumOnly(strings.ToLower(md.ParentTitle)) == normalizedAlbum
 		artistMatch := util.ContainsFold(util.AlnumOnly(md.OriginalTitle), normArtist) || util.ContainsFold(util.AlnumOnly(md.GrandparentTitle), normArtist)
 
