@@ -94,6 +94,7 @@ func (s *Settings) HandleResetConfig(w http.ResponseWriter, r *http.Request) {
 // handleSaveSchedule updates a single playlist's schedule in the .env file.
 func (s *Settings) HandleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 	var body struct {
+		ID      string `json:"id"`
 		Name    string `json:"name"`
 		Enabled bool   `json:"enabled"`
 		Day     int    `json:"day"` // 0=Sun…6=Sat, -1=every day
@@ -108,12 +109,12 @@ func (s *Settings) HandleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 	var envPrefix string
 	var defaultFlags string
 
-	if def, ok := defs.PlaylistDefs[body.Name]; ok {
+	if def, ok := defs.PlaylistDefs[body.ID]; ok {
 		envPrefix = def.EnvPrefix
 		defaultFlags = def.DefaultFlags
-	} else if defs.CustomIDRe.MatchString(body.Name) {
+	} else if defs.CustomIDRe.MatchString(body.ID) {
 		envPrefix = util.CustomEnvPrefix(body.Name)
-		defaultFlags = "--playlist " + body.Name
+		defaultFlags = "--playlist " + body.ID
 	} else {
 		http.Error(w, "unknown playlist name", http.StatusBadRequest)
 		return
@@ -211,6 +212,7 @@ func (s *Settings) HandleSaveEnrichMetadata(w http.ResponseWriter, r *http.Reque
 // HandleSaveReplacePlaylist injects or removes --replace-playlist=false from a playlist's FLAGS env var.
 func (s *Settings) HandleSaveReplacePlaylist(w http.ResponseWriter, r *http.Request) {
 	var body struct {
+		ID      string `json:"id"`
 		Name    string `json:"name"`
 		Replace bool   `json:"replace"`
 	}
@@ -221,12 +223,12 @@ func (s *Settings) HandleSaveReplacePlaylist(w http.ResponseWriter, r *http.Requ
 
 	var envPrefix string
 	var defaultFlags string
-	if def, ok := defs.PlaylistDefs[body.Name]; ok {
+	if def, ok := defs.PlaylistDefs[body.ID]; ok {
 		envPrefix = def.EnvPrefix
 		defaultFlags = def.DefaultFlags
-	} else if defs.CustomIDRe.MatchString(body.Name) {
+	} else if defs.CustomIDRe.MatchString(body.ID) {
 		envPrefix = util.CustomEnvPrefix(body.Name)
-		defaultFlags = "--playlist " + body.Name
+		defaultFlags = "--playlist " + body.ID
 	} else {
 		http.Error(w, "unknown playlist name", http.StatusBadRequest)
 		return
