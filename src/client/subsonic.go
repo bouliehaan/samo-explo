@@ -170,7 +170,7 @@ func (c *Subsonic) SearchSongs(tracks []*models.Track) error {
 			musicBrainzMatch := track.MusicBrainzTrackID != "" && song.MusicBrainzID == track.MusicBrainzTrackID
 			artistMatch := util.ContainsFold(song.Artist, track.MainArtist)
 			albumMatch := util.ContainsFold(song.Album, track.Album)
-			titleMatch := normalizedSongTitle == normalizedCleanTitle
+			titleMatch := normalizedSongTitle == normalizedCleanTitle || song.Title == track.Title
 			durationMatch := util.Abs(song.Duration - (track.Duration / 1000)) < 10
 			pathMatch := util.ContainsFold(song.Path, track.File)
 

@@ -358,14 +358,14 @@ func (c *ListenBrainz) getTracks(mbids []string, singleArtist bool) ([]*models.T
 			if singleArtist {
 				var b strings.Builder
 				b.WriteString(title)
-				b.WriteString(" feat. ")
+				b.WriteString(" (feat. ")
 				b.WriteString(recArtists[1].Name)
 
 				for _, a := range recArtists[2:] {
 					b.WriteString(", ")
 					b.WriteString(a.Name)
 				}
-
+				b.WriteString(")")
 				title = b.String()
 				artist = mainArtist
 			}
@@ -709,13 +709,14 @@ func (c *ListenBrainz) parsePlaylist(identifier string, singleArtist bool) (stri
 			if singleArtist {
 				var b strings.Builder
 				b.WriteString(title)
-				b.WriteString(" feat. ")
+				b.WriteString(" (feat. ")
 				b.WriteString(trackArtists[1].ArtistCreditName)
 
 				for _, a := range trackArtists[2:] {
 					b.WriteString(", ")
 					b.WriteString(a.ArtistCreditName)
 				}
+                b.WriteString(")")
 				title = b.String()
 				artist = trackArtists[0].ArtistCreditName
 			}
