@@ -457,14 +457,14 @@ func (c *ListenBrainz) enrichTracks(tracks []*models.Track, singleArtist bool) (
 			if singleArtist {
 				var b strings.Builder
 				b.WriteString(title)
-				b.WriteString(" feat. ")
+				b.WriteString(" (feat. ")
 				b.WriteString(recArtists[1].Name)
 
 				for _, a := range recArtists[2:] {
 					b.WriteString(", ")
 					b.WriteString(a.Name)
 				}
-
+                b.WriteString(")")
 				title = b.String()
 				artist = mainArtist
 			} else {
