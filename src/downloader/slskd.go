@@ -275,38 +275,47 @@ func (c Slskd) CollectFiles(track models.Track, searchResults SearchResults) ([]
 
 	files := slices.Collect(func(yield func(File) bool) {
 		for _, result := range searchResults {
-			if result.FileCount > 0 && result.HasFreeUploadSlot {
-				for _, file := range result.Files {
-					file.Extension = strings.TrimPrefix(strings.ToLower(file.Extension), ".")
-					if file.Extension == "" {
-						extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(string(file.Name))), ".")
-						file.Extension = util.AlnumOnly(extension) // sanitize extension incase of bad chars
+			if result.FileCount == 0 || !result.HasFreeUploadSlot {
+				continue
+			}
+			for _, file := range result.Files {
+				nameExt := util.AlnumOnly(strings.TrimPrefix(strings.ToLower(filepath.Ext(string(file.Name))), "."))
+				reportedExt := strings.TrimPrefix(strings.ToLower(file.Extension), ".")
+				if nameExt != "" {
+					if reportedExt != "" && reportedExt != nameExt {
+						slog.Debug("extension mismatch between filename and metadata, using filename ext",
+						"track", track.CleanTitle, "filename", file.Name, "reportedExtension", reportedExt, "actualExtension", nameExt)
+					}
+					file.Extension = nameExt
+					} else {
+					file.Extension = reportedExt
 					}
 
-					if !slices.Contains(c.Cfg.Filters.Extensions, file.Extension) && ContainsKeyword(track, file.Name, c.Cfg.Filters.FilterList) {
-						continue
-					}
+				if !slices.Contains(c.Cfg.Filters.Extensions, file.Extension) || ContainsKeyword(track, file.Name, c.Cfg.Filters.FilterList) {
+					continue
+				}
 
-					if track.Duration > 0 && util.Abs(track.Duration/1000-file.Length) > 10 { // skip song if track lengths have a 10s+ difference
-						continue
-					}
+				if track.Duration > 0 && util.Abs(track.Duration/1000-file.Length) > 10 { // skip song if track lengths have a 10s+ difference
+					continue
+				}
 
-					sanitizedFilename := util.AlnumOnly(string(file.Name))
-					if (containsLower(sanitizedFilename, sanitizedArtist) || containsLower(sanitizedFilename, sanitizedAlbum)) && containsLower(sanitizedFilename, sanitizedTitle) {
-						file.Username = result.Username
-						if !yield(file) {
+				sanitizedFilename := util.AlnumOnly(string(file.Name))
+				matchesArtist := containsLower(sanitizedFilename, sanitizedArtist)
+				matchesAlbum := containsLower(sanitizedFilename, sanitizedAlbum)
+				matchesTitle := containsLower(sanitizedFilename, sanitizedTitle)
+				if (matchesArtist || matchesAlbum) && matchesTitle {
+					file.Username = result.Username
+					if !yield(file) {
 							return
-						}
 					}
 				}
 			}
 		}
 	})
-	if len(files) != 0 {
-		return files, nil
-	} else {
+	if len(files) == 0 {
 		return nil, fmt.Errorf("no tracks passed collection for %s - %s", track.MainArtist, track.CleanTitle)
-	}
+	} 
+	return files, nil
 }
 
 func (c Slskd) filterFiles(files []File) ([]File, error) {
@@ -318,11 +327,11 @@ func (c Slskd) filterFiles(files []File) ([]File, error) {
 				continue
 			}
 
-			if file.BitRate > 0 && file.BitRate <= c.Cfg.Filters.MinBitRate {
+			if file.BitRate > 0 && file.BitRate < c.Cfg.Filters.MinBitRate {
 				continue
 			}
 
-			if file.BitDepth > 0 && file.BitDepth <= c.Cfg.Filters.MinBitDepth {
+			if file.BitDepth > 0 && file.BitDepth < c.Cfg.Filters.MinBitDepth {
 				continue
 			}
 
