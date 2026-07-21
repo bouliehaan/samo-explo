@@ -68,6 +68,10 @@ func (s *Settings) HandleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateEnvText(string(data)); err != nil {
+		http.Error(w, "invalid .env content: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	if err := os.WriteFile(s.cfg.WebEnvPath, data, 0600); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
