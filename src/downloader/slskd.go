@@ -282,14 +282,10 @@ func (c Slskd) CollectFiles(track models.Track, searchResults SearchResults) ([]
 				nameExt := util.AlnumOnly(strings.TrimPrefix(strings.ToLower(filepath.Ext(string(file.Name))), "."))
 				reportedExt := strings.TrimPrefix(strings.ToLower(file.Extension), ".")
 				if nameExt != "" {
-					if reportedExt != "" && reportedExt != nameExt {
-						slog.Debug("extension mismatch between filename and metadata, using filename ext",
-						"track", track.CleanTitle, "filename", file.Name, "reportedExtension", reportedExt, "actualExtension", nameExt)
-					}
 					file.Extension = nameExt
-					} else {
+				} else {
 					file.Extension = reportedExt
-					}
+				}
 
 				if !slices.Contains(c.Cfg.Filters.Extensions, file.Extension) || ContainsKeyword(track, file.Name, c.Cfg.Filters.FilterList) {
 					continue
