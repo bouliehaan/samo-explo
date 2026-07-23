@@ -43,6 +43,15 @@ Or jump directly to:
 - [FAQ](https://github.com/LumePart/Explo/wiki/8.-FAQ) – Common questions
 
 
+## Kubernetes
+
+```bash
+helm repo add explo https://lumepart.github.io/Explo && helm repo update
+helm install explo explo/explo --namespace explo --create-namespace
+```
+
+See [charts/explo/README.md](charts/explo/README.md).
+
 ## Acknowledgements
 
 Explo uses the following 3rd-party libraries:
