@@ -37,4 +37,4 @@ services:
 
       # Uncomment for testing (runs explo right after launcing the container)
       #- EXECUTE_ON_START=false # Whether to run explo when starting the container (useful for testing)
-      #- START_FLAGS=--persist=false # if needed, set startup flags for testing
+      #- START_FLAGS=--replace-playlist=false # if needed, set startup flags for testing
