@@ -28,7 +28,9 @@ async function apiFetch(url, options = {}) {
 
 export async function checkAuth() {
   const res = await fetch('/api/ui/auth/status', { credentials: 'include' })
-  return res.ok
+  // Older builds return an empty body, so tolerate a failed parse.
+  const data = await res.json().catch(() => ({}))
+  return { authenticated: res.ok, authDisabled: !!data.auth_disabled }
 }
 
 export async function login(username, password) {
