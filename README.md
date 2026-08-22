@@ -1,75 +1,121 @@
-# Explo - Music Discovery for Self-Hosted Music Systems
+# samo-explo — weekly music discovery for [samo](https://github.com/bouliehaan/samo)
 
+A fork of [LumePart/Explo](https://github.com/LumePart/Explo) with a native
+[samo-server](https://github.com/bouliehaan/samo-server) client.
 
-[![Discord](https://img.shields.io/discord/1497141529696014409?style=flat&logo=Discord&labelColor=white&color=black&link=https%3A%2F%2Fdiscord.gg%2FuFWWPaN2zk)](https://discord.gg/uFWWPaN2zk)
+Every week it pulls your ListenBrainz recommendations, downloads what your
+library is missing, and drops it where samo can find it. samo does the rest.
 
-<p align="center">
-  <img src="visual/dashboard.png" width="850" />
-</p>
-
-**Explo** bridges the gap between music discovery and self-hosted music systems. Its main function is to act as a self-hosted alternative to Spotify’s *Discover Weekly*, automating music discovery based on your listening history.
-
-Explo uses the [ListenBrainz](https://listenbrainz.org/) recommendation engine to retrieve personalized tracks and automatically imports them into your music library.
-
----
-
-## Features
-
-- Automatic music discovery powered by ListenBrainz
-- Web UI for setup, scheduling, and playlist import management
-- Fetch personalized playlists from ListenBrainz:
-  - Weekly Exploration
-  - Weekly Jams
-  - Daily Jams
-- Import custom playlists from:
-  - Apple Music
-  - ListenBrainz
-  - Spotify
-- Request tracks from YouTube, Soulseek, or both
-- Add metadata to downloaded tracks
-- Create playlists in your music system
-- Optionally keep previous playlists for later listening
----
-
-## Documentation
-
-See the [Wiki Home](https://github.com/LumePart/Explo/wiki) for an overview of supported systems and next steps.
-
-Or jump directly to:
-- [Quick Start](https://github.com/LumePart/Explo/wiki/2.-Quick-Start) – Get Explo running with docker
-- [Getting Started](https://github.com/LumePart/Explo/wiki/3.-Getting-Started) – Installation and setup guide  
-- [Configuration Parameters](https://github.com/LumePart/Explo/wiki/5.-Configuration-Parameters) – Environment variable and flag reference  
-- [System Notes](https://github.com/LumePart/Explo/wiki/6.-System-Notes) – Known issues and system-specific tips  
-- [FAQ](https://github.com/LumePart/Explo/wiki/8.-FAQ) – Common questions
-
-
-## Kubernetes
-
-```bash
-helm repo add explo https://lumepart.github.io/Explo && helm repo update
-helm install explo explo/explo --namespace explo --create-namespace
+```sh
+git clone https://github.com/bouliehaan/samo-explo.git
+cd samo-explo
+./deploy.sh
 ```
 
-See [charts/explo/README.md](charts/explo/README.md).
+`deploy.sh` asks for your samo URL and login, mints a dedicated API token,
+writes `.env` and `docker-compose.yaml`, and starts the container. Re-running it
+is safe — it reuses the token it already made.
 
-## Acknowledgements
+---
 
-Explo uses the following 3rd-party libraries:
+## Why the fork
 
-- [ffmpeg-go](https://github.com/u2takey/ffmpeg-go): Go wrapper for FFmpeg
+samo speaks Subsonic, so upstream Explo *appears* to work against it. It does
+not. samo's Subsonic surface is deliberately read-only for playlists: it
+implements `getPlaylists` and `getPlaylist`, but not `createPlaylist`,
+`updatePlaylist`, or `startScan`. Explo authenticates, downloads, and then fails
+on the last step of every single run.
 
-- [goutubedl](https://github.com/wader/goutubedl): Go wrapper for yt-dlp
+The `samo` client here talks to the native REST API instead, which has all
+three. It also:
 
-- [godotenv](https://github.com/joho/godotenv): Load configuration from `.env` files
+- **fails loudly on a bad token.** A wrong URL or an expired token stops the run
+  at startup rather than degrading into a week that quietly downloads nothing.
+- **skips what you already own.** `--download-mode=normal` searches samo's
+  catalog, so a recommendation you already have is never re-downloaded.
+- **scans only the drop folder.** It reads the server's own explo folder path
+  and passes it as a scan subpath, so a drop is visible in seconds instead of
+  after a full library walk.
 
-- [ytmusicapi](https://github.com/sigma67/ytmusicapi): Unofficial Youtube Music API
+## The two modes
 
-- [notify](https://github.com/nikoksr/notify): Module for sending notifications to different services
+**samo's explo folder is on** (Settings → Explo). This is the good one. samo
+fingerprints every dropped file with AcoustID, applies real metadata and cover
+art, keeps the drop out of Recently Added, and re-derives its system **Explore**
+playlist from the folder on every pass. samo-explo detects this and does *not*
+create a playlist of its own — a second one would sit next to samo's, going
+stale while samo rewrites the real one. Downloading is the whole integration.
 
-- [gocron](https://github.com/go-co-op/gocron): Internal cron scheduling
+**samo's explo folder is off.** samo-explo falls back to creating an ordinary
+samo playlist from the tracks it resolved. No fingerprinting, no cover art, and
+the drops show up in Recently Added like any other import.
 
-## Contributing
+`deploy.sh` detects which one you are in and tells you.
 
-Contributions are always welcome! If you have any suggestions, bug reports, or feature requests, please open an issue or submit a pull request (be sure to [read the development section](https://github.com/LumePart/Explo/wiki/7.-Development) of our wiki).
+## Configuration
 
-For discussion regarding development or help, join our [Discord!](https://discord.gg/uFWWPaN2zk)
+Beyond the upstream variables, the samo client uses:
+
+| Variable | Meaning |
+| --- | --- |
+| `EXPLO_SYSTEM=samo` | Selects this client |
+| `SYSTEM_URL` | Your samo server, e.g. `http://192.168.1.10:6969` |
+| `API_KEY` | A samo bearer token — Settings → API tokens |
+| `LIBRARY_NAME` | Optional; picks a specific library when you have several |
+
+An **admin** token is worth using. A non-admin one downloads and builds
+playlists fine, but cannot trigger a scan or read explo status, so it waits out
+`SLEEP` instead and reports less.
+
+## Two things that will bite you
+
+**Do not put `docker compose run` in cron.** The image is a long-running daemon
+— `start.sh` registers cron jobs from the `*_SCHEDULE` variables and ends in
+`crond -f`. `docker compose run --rm explo` starts a *second* scheduler that
+never exits, ignores any CLI flags you pass it (`start.sh` does not read `$@`),
+and vanishes the next time the Docker daemon restarts. Set the schedule in
+`docker-compose.yaml` and let the container do it.
+
+**`--persist=false` is what rotates the folder.** It deletes last week's drop
+before fetching this week's, which is what makes samo's Explore playlist a
+"this week" queue rather than an ever-growing pile. Upstream has since split
+this into `--replace-playlist` and `--clean-downloads` (default off), so if you
+move to a newer base image, set `--clean-downloads` explicitly or the rotation
+silently stops.
+
+## Manual runs
+
+```sh
+docker exec samo-explo sh -c 'cd /opt/explo && ./explo --persist=false'
+```
+
+The web UI on `http://localhost:7288` has a run button and a log view.
+
+---
+
+## Everything else
+
+The rest of Explo is unchanged: ListenBrainz discovery, YouTube and Soulseek
+downloading, custom playlist imports from Apple Music / ListenBrainz / Spotify,
+metadata tagging, and the other music systems (Emby, Jellyfin, MPD, Plex,
+Subsonic). Upstream's documentation applies as written:
+
+- [Quick Start](https://github.com/LumePart/Explo/wiki/2.-Quick-Start)
+- [Getting Started](https://github.com/LumePart/Explo/wiki/3.-Getting-Started)
+- [Configuration Parameters](https://github.com/LumePart/Explo/wiki/5.-Configuration-Parameters)
+- [System Notes](https://github.com/LumePart/Explo/wiki/6.-System-Notes)
+- [FAQ](https://github.com/LumePart/Explo/wiki/8.-FAQ)
+
+## Credits
+
+Explo is written by [Markus Kuuse](https://github.com/LumePart) and its
+contributors, and is MIT licensed — see `LICENSE`. This fork adds one client and
+a deploy script; everything that makes it work is theirs. If you do not run
+samo, use [upstream](https://github.com/LumePart/Explo) directly.
+
+Third-party libraries: [ffmpeg-go](https://github.com/u2takey/ffmpeg-go),
+[goutubedl](https://github.com/wader/goutubedl),
+[godotenv](https://github.com/joho/godotenv),
+[ytmusicapi](https://github.com/sigma67/ytmusicapi),
+[notify](https://github.com/nikoksr/notify),
+[gocron](https://github.com/go-co-op/gocron). See `NOTICE`.

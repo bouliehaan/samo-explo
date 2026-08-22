@@ -99,11 +99,14 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	case "plex":
 		c.API = NewPlex(cfg.ClientCfg, httpClient)
 
+	case "samo":
+		c.API = NewSamo(cfg.ClientCfg, httpClient)
+
 	case "subsonic":
 		c.API = NewSubsonic(cfg.ClientCfg, httpClient)
 
 	default:
-		return nil, fmt.Errorf("unknown system: %s. Use a supported system (emby, jellyfin, mpd, plex, or subsonic)", c.System)
+		return nil, fmt.Errorf("unknown system: %s. Use a supported system (emby, jellyfin, mpd, plex, samo, or subsonic)", c.System)
 	}
 
 	if err := c.systemSetup(); err != nil { // Run setup automatically
@@ -150,6 +153,21 @@ func (c *Client) systemSetup() error {
 		}
 		return nil
 
+	case "samo":
+		if c.Cfg.URL == "" {
+			return fmt.Errorf("samo SYSTEM_URL is required")
+		}
+		if c.Cfg.Creds.APIKey == "" {
+			return fmt.Errorf("samo API_KEY is required (Settings -> API tokens, or run deploy.sh)")
+		}
+		if err := c.API.AddHeader(); err != nil {
+			return err
+		}
+		if err := c.API.GetAuth(); err != nil {
+			return err
+		}
+		return c.API.GetLibrary()
+
 	case "plex":
 		if (c.Cfg.Creds.User == "" || c.Cfg.Creds.Password == "") && c.Cfg.Creds.APIKey == "" {
 			return fmt.Errorf("Plex USER/PASSWORD or API_KEY is required")
@@ -179,7 +197,7 @@ func (c *Client) systemSetup() error {
 		return c.API.GetLibrary()
 
 	default:
-		return fmt.Errorf("unknown system: %s. Use a supported system (emby, jellyfin, mpd, plex, or subsonic)", c.System)
+		return fmt.Errorf("unknown system: %s. Use a supported system (emby, jellyfin, mpd, plex, samo, or subsonic)", c.System)
 	}
 }
 

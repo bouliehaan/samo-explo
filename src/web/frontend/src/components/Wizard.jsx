@@ -139,6 +139,7 @@ function SegmentedControl({ value, onChange, options }) {
 }
 
 const SYSTEMS = [
+  { value: "samo", name: "Samo" },
   { value: "jellyfin", name: "Jellyfin" },
   { value: "emby", name: "Emby" },
   { value: "plex", name: "Plex" },
@@ -170,7 +171,7 @@ function Step2({ fields, setField, envSources, onBack, onNext, saving }) {
   const isLocked = (key) => envSources[key] === ".env";
 
   const urlPlaceholder = () => {
-    const ports = { jellyfin: '8096', emby: '8096', plex: '32400', subsonic: '4533' }
+    const ports = { samo: '6969', jellyfin: '8096', emby: '8096', plex: '32400', subsonic: '4533' }
     return `e.g. http://192.168.1.100:${ports[system] || '8096'}`
   }
 
@@ -184,6 +185,7 @@ function Step2({ fields, setField, envSources, onBack, onNext, saving }) {
     }
     if (system === "jellyfin" && ( !systemUsername.trim() || !apiKey.trim() ) ) return false;
     if (system === "subsonic" && (!systemUsername.trim() || !systemPassword.trim()))  return false;
+    if (system === "samo" && !apiKey.trim()) return false;
     if (adminCredentials) {
       if (adminAuthMethod == "apikey" && !adminApiKey?.trim()) return false;
       if (adminAuthMethod == "password" && (!adminSystemUsername?.trim() || !adminSystemPassword?.trim())) return false;
@@ -400,6 +402,22 @@ function Step2({ fields, setField, envSources, onBack, onNext, saving }) {
               </Collapse>
             </div>
           </>
+        )}
+
+        {system === "samo" && (
+          <TextField
+            label="API Token"
+            hint="Samo → Settings → API tokens → New token. An admin token also lets Explo trigger a library scan the moment a drop finishes."
+          >
+            <input
+              type="password"
+              className={inputCls}
+              value={apiKey}
+              onChange={(e) => setField("apiKey", e.target.value)}
+              autoComplete="off"
+              disabled={isLocked("API_KEY")}
+            />
+          </TextField>
         )}
 
         {system === "subsonic" && (
