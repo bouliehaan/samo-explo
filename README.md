@@ -87,6 +87,39 @@ changes nothing — so a config carried over from an older image looks correct,
 runs without error, and quietly stops rotating. If your Explore playlist is
 growing instead of turning over, this is why.
 
+## Downloads: YouTube will block you
+
+YouTube answers most server IPs with *"Sign in to confirm you're not a bot"*,
+and every download in the run fails with it. Nothing in samo or samo-explo can
+work around that — it is YouTube deciding your server is not a person. Two ways
+out:
+
+**A cookies file.** yt-dlp's own remedy, and Explo picks one up automatically
+at `./cookies.txt`. Export your YouTube cookies in Netscape format, drop the
+file at `cookies.txt` next to `deploy.sh`, and re-run — it gets mounted for
+you. Worth using a throwaway Google account rather than your main one: this is
+bulk automated fetching, and accounts do get flagged for it.
+
+**Soulseek instead.** Set `DOWNLOAD_SERVICES=slskd` with `SLSKD_URL` and
+`SLSKD_API_KEY` pointing at an [slskd](https://github.com/slskd/slskd)
+instance. No bot checks, no cookies to keep fresh, and generally better audio
+than a YouTube rip. This is the better answer for something that has to run
+unattended every week.
+
+A run that downloads nothing is not silent, at least: samo-explo reports
+`inFolder=0` and points at the download failures above it.
+
+## What lands in Explore
+
+Only tracks that are **new to your library**. Explo marks a recommendation you
+already own as present and skips downloading it, so it never enters the drop
+folder, and samo's Explore playlist is derived from that folder. A 50-track
+weekly recommendation where you already own 22 produces an Explore of 28.
+
+That is usually what you want — Explore is "what arrived", not "what was
+recommended" — but it does mean a well-stocked library yields a smaller
+Explore.
+
 ## Manual runs
 
 ```sh

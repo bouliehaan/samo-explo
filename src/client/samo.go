@@ -396,10 +396,16 @@ func (c *Samo) CreatePlaylist(tracks []*models.Track) error {
 
 // logExploStatus reports what the server made of the drop, so a run that hands
 // off to server-side explo still says something more useful than "done".
+//
+// The track count here is RESOLVED tracks, not downloads. Explo marks a
+// recommendation you already own as Present during CheckTracks, skips it in the
+// download loop, and keeps it in the slice — so this number is "already in your
+// library" plus "newly fetched", and calling it "downloaded" sent an earlier
+// version of this straight past a run where every single download had failed.
 func (c *Samo) logExploStatus(tracks []*models.Track) {
 	body, err := c.request("GET", "/explo/tracks?limit=1", nil)
 	if err != nil {
-		slog.Info("[samo] downloaded tracks handed off to samo's explo pipeline", "tracks", len(tracks))
+		slog.Info("[samo] handed off to samo's explo pipeline", "resolved", len(tracks))
 		return
 	}
 	var status samoExploTracks
@@ -407,12 +413,19 @@ func (c *Samo) logExploStatus(tracks []*models.Track) {
 		return
 	}
 	slog.Info("[samo] handed off to samo's explo pipeline; it builds the Explore playlist itself",
-		"downloaded", len(tracks),
+		"resolved", len(tracks),
 		"inFolder", status.Summary.InFolder,
 		"identified", status.Summary.Identified)
-	if status.Summary.InFolder == 0 && len(tracks) > 0 {
-		slog.Warn("[samo] samo sees 0 tracks under its explo folder — check that SAMO_EXPLO_DIRS points at the same directory this container writes to")
+	if status.Summary.InFolder != 0 {
+		return
 	}
+	// Nothing is under samo's explo folder. Two very different causes, and
+	// naming the wrong one costs an evening: either nothing new was fetched
+	// this run, or files were written somewhere samo is not looking.
+	slog.Warn("[samo] samo sees 0 tracks under its explo folder")
+	slog.Warn("[samo] if the log above shows download failures, that is the cause — nothing new reached the folder")
+	slog.Warn("[samo] otherwise check that DOWNLOAD_DIR lands on the same directory SAMO_EXPLO_DIRS names",
+		"samoWatches", c.serverExploDir)
 }
 
 // SearchPlaylist finds the playlist a previous run created. System playlists

@@ -262,6 +262,15 @@ fi
 chmod 600 "$ENV_FILE"
 info "wrote .env (mode 600 — it holds your API token)"
 
+# YouTube increasingly answers datacenter IPs with "Sign in to confirm you're
+# not a bot", which fails every download. yt-dlp's own remedy is a cookies file,
+# and Explo picks one up automatically at ./cookies.txt.
+COOKIE_MOUNT=""
+if [[ -f "$INSTALL_DIR/cookies.txt" ]]; then
+    COOKIE_MOUNT=$'\n      - '"$INSTALL_DIR/cookies.txt:/opt/explo/cookies.txt:ro"
+    info "found cookies.txt — yt-dlp will authenticate with it"
+fi
+
 if $USE_HOST_NET; then
     NETWORK_BLOCK="    network_mode: host"     # binds the web UI on :7288 directly
 elif [[ "$CONTAINER_URL" == *host.docker.internal* ]]; then
@@ -284,7 +293,7 @@ $NETWORK_BLOCK
       - $ENV_FILE
     volumes:
       - $ENV_FILE:/opt/explo/.env
-      - $DOWNLOAD_PATH:/data/Weekly-Exploration
+      - $DOWNLOAD_PATH:/data/Weekly-Exploration$COOKIE_MOUNT
     environment:
       - PUID=$(id -u)
       - PGID=$(id -g)
@@ -345,6 +354,16 @@ bold "Done."
 info "Web UI:    http://localhost:7288"
 info "Logs:      docker compose -f $COMPOSE_FILE logs -f"
 info "Run now:   docker exec samo-explo sh -c 'cd /opt/explo && ./explo --replace-playlist --clean-downloads'"
+echo
+if [[ -z "$COOKIE_MOUNT" ]] && grep -q '^DOWNLOAD_SERVICES=.*youtube' "$ENV_FILE"; then
+    echo
+    warn "No cookies.txt present. YouTube now answers most servers with"
+    warn "\"Sign in to confirm you're not a bot\", which fails every download."
+    warn "Fix it one of two ways:"
+    warn "  - export YouTube cookies to $INSTALL_DIR/cookies.txt and re-run this script"
+    warn "  - or switch to Soulseek: set DOWNLOAD_SERVICES=slskd with SLSKD_URL and SLSKD_API_KEY"
+fi
+
 echo
 info "The container schedules itself from WEEKLY_EXPLORATION_SCHEDULE."
 info "Do not also add a cron entry — 'docker compose run' starts a SECOND scheduler"
