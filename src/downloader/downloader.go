@@ -68,9 +68,17 @@ func (c *DownloadClient) StartDownload(tracks *[]*models.Track) {
 
 	for _, d := range c.Downloaders {
 		var g errgroup.Group
-		g.SetLimit(3)
+		// Serial by default. This used to be a hardcoded 3, which combined with
+		// Soulseek's fan-out to produce connection storms that VPN providers
+		// terminate the session over.
+		concurrency := c.Cfg.DownloadConcurrency
+		if concurrency < 1 {
+			concurrency = 1
+		}
+		g.SetLimit(concurrency)
 
 		limiter := rate.NewLimiter(rate.Every(time.Second), c.Cfg.DownloadLimiter)
+		pause := time.Duration(c.Cfg.DownloadDelay) * time.Second
 
 		for _, track := range *tracks {
 			if track.Present {
@@ -97,9 +105,15 @@ func (c *DownloadClient) StartDownload(tracks *[]*models.Track) {
 
 				if err := d.GetTrack(track); err != nil {
 					slog.Warn(err.Error())
+					if pause > 0 {
+						time.Sleep(pause)
+					}
 					return nil
 				}
 
+				if pause > 0 {
+					time.Sleep(pause)
+				}
 				return nil
 			})
 		}
@@ -222,15 +236,15 @@ func sanitize(s string) string {
 
 func buildTrackPath(template string, track *models.Track) string {
 	replacements := map[string]string{
-		"Artist":		sanitize(track.MainArtist),
-		"Album":		sanitize(track.Album),
-		"AlbumName":	sanitize(track.Album),
-		"TrackName":	sanitize(track.CleanTitle),
-		"TrackNumber":	fmt.Sprintf("%02d", track.TrackNumber),
-		"DiscNumber":	fmt.Sprintf("%02d", track.DiscNumber),
-		"Year":			strconv.Itoa(track.OriginalYear),
-		"File":			sanitize(track.File),
-		"ext":			strings.TrimPrefix(filepath.Ext(track.File), "."),
+		"Artist":      sanitize(track.MainArtist),
+		"Album":       sanitize(track.Album),
+		"AlbumName":   sanitize(track.Album),
+		"TrackName":   sanitize(track.CleanTitle),
+		"TrackNumber": fmt.Sprintf("%02d", track.TrackNumber),
+		"DiscNumber":  fmt.Sprintf("%02d", track.DiscNumber),
+		"Year":        strconv.Itoa(track.OriginalYear),
+		"File":        sanitize(track.File),
+		"ext":         strings.TrimPrefix(filepath.Ext(track.File), "."),
 	}
 
 	result := template
@@ -272,7 +286,7 @@ func (c *DownloadClient) MoveDownload(srcDir, destDir, trackPath string, track *
 	}()
 
 	var dstFile string
-	
+
 	if c.Cfg.PathTemplate != "" {
 		relativePath := buildTrackPath(c.Cfg.PathTemplate, track)
 		track.File = filepath.Base(relativePath)
@@ -340,29 +354,29 @@ func (c *DownloadClient) MoveDownload(srcDir, destDir, trackPath string, track *
 
 func overwriteMetadata(metadata []string, srcFile string) error {
 	opts := ffmpeg.KwArgs{
-			"c": "copy",
-			"metadata": metadata,
-			"loglevel": "error",
-		}
-		streams := []*ffmpeg.Stream{
-    		ffmpeg.Input(srcFile),
-		}
+		"c":        "copy",
+		"metadata": metadata,
+		"loglevel": "error",
+	}
+	streams := []*ffmpeg.Stream{
+		ffmpeg.Input(srcFile),
+	}
 
-		tmpFile := tempAudioFile(srcFile)
+	tmpFile := tempAudioFile(srcFile)
 
-		if err := util.WriteMetadata(streams, "", tmpFile, opts); err != nil {
-			return fmt.Errorf("failed to overwrite metadata: %w", err)
-		} else {
-			if err := os.Rename(tmpFile, srcFile); err != nil {
-				return fmt.Errorf("failed to rename tmp file: %w", err)
-			}
+	if err := util.WriteMetadata(streams, "", tmpFile, opts); err != nil {
+		return fmt.Errorf("failed to overwrite metadata: %w", err)
+	} else {
+		if err := os.Rename(tmpFile, srcFile); err != nil {
+			return fmt.Errorf("failed to rename tmp file: %w", err)
 		}
-		return nil
+	}
+	return nil
 }
 
 func tempAudioFile(path string) string {
-    ext := filepath.Ext(path)
-    return strings.TrimSuffix(path, ext) + ".tmp" + ext
+	ext := filepath.Ext(path)
+	return strings.TrimSuffix(path, ext) + ".tmp" + ext
 }
 
 func isDirEmpty(path string) (bool, error) {

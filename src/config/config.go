@@ -17,30 +17,30 @@ import (
 var Version = "dev"
 
 type Config struct {
-	DownloadCfg  DownloadConfig
-	DiscoveryCfg DiscoveryConfig
-	ClientCfg    ClientConfig
-	NotifyCfg    NotifyConfig
-	ServerCfg    ServerConfig
-	Flags        Flags
+	DownloadCfg     DownloadConfig
+	DiscoveryCfg    DiscoveryConfig
+	ClientCfg       ClientConfig
+	NotifyCfg       NotifyConfig
+	ServerCfg       ServerConfig
+	Flags           Flags
 	ReplacePlaylist bool
-	System       string `env:"EXPLO_SYSTEM"`
-	Debug        bool   `env:"DEBUG" env-default:"false"`
-	LogLevel     string `env:"LOG_LEVEL" env-default:"INFO"`
+	System          string `env:"EXPLO_SYSTEM"`
+	Debug           bool   `env:"DEBUG" env-default:"false"`
+	LogLevel        string `env:"LOG_LEVEL" env-default:"INFO"`
 }
 
 type Flags struct {
-	CfgPath      string
-	CfgSet       bool
-	Playlist     string
-	PlaylistSet	 bool
-	DownloadMode string
-	ExcludeLocal bool
-	PersistSet   bool
+	CfgPath         string
+	CfgSet          bool
+	Playlist        string
+	PlaylistSet     bool
+	DownloadMode    string
+	ExcludeLocal    bool
+	PersistSet      bool
 	ReplacePlaylist bool
-	SearchMBID     string
-	RefreshOnly    bool
-	CleanDownloads bool
+	SearchMBID      string
+	RefreshOnly     bool
+	CleanDownloads  bool
 }
 
 type ServerConfig struct {
@@ -64,9 +64,9 @@ type ClientConfig struct {
 	PlaylistNFormat string `env:"PLAYLISTNAME_FORMAT" env-default:"week"`
 	PlaylistDescr   string
 	PlaylistID      string
-	PublicPlaylist  bool   `env:"PUBLIC_PLAYLIST" env-default:"false"`
-	Sleep           int `env:"SLEEP" env-default:"2"`
-	HTTPTimeout     int `env:"CLIENT_HTTP_TIMEOUT" env-default:"10"`
+	PublicPlaylist  bool `env:"PUBLIC_PLAYLIST" env-default:"false"`
+	Sleep           int  `env:"SLEEP" env-default:"2"`
+	HTTPTimeout     int  `env:"CLIENT_HTTP_TIMEOUT" env-default:"10"`
 	Creds           Credentials
 	AdminCreds      AdminCredentials
 	Subsonic        SubsonicConfig
@@ -82,30 +82,38 @@ type Credentials struct {
 }
 
 type AdminCredentials struct {
-	APIKey	 string `env:"ADMIN_API_KEY"`
+	APIKey   string `env:"ADMIN_API_KEY"`
 	User     string `env:"ADMIN_SYSTEM_USERNAME"`
 	Password string `env:"ADMIN_SYSTEM_PASSWORD"`
 }
 
 type SubsonicConfig struct {
-	Version        string `env:"SUBSONIC_VERSION" env-default:"1.16.1"`
-	ID             string `env:"CLIENT" env-default:"explo"`
+	Version string `env:"SUBSONIC_VERSION" env-default:"1.16.1"`
+	ID      string `env:"CLIENT" env-default:"explo"`
 }
 
 type DownloadConfig struct {
-	DownloadDir       string `env:"DOWNLOAD_DIR" env-default:"/data/"`
-	PathTemplate	  string `env:"PATH_TEMPLATE"`
-	Youtube           Youtube
-	YoutubeMusic      YoutubeMusic
-	Slskd             Slskd
-	ExcludeLocal      bool
-	DownloadLimiter   int    `env:"DOWNLOAD_LIMITER" env-default:"1"` // rate limit download operations
-	OverwriteMetadata bool   `env:"OVERWRITE_METADATA" env-default:"false"` // overwrite metadata when migrating downloads
-	KeepPermissions   bool     `env:"KEEP_PERMISSIONS" env-default:"true"` // keep original file permissions when migrating download
-	RenameTrack       bool     `env:"RENAME_TRACK" env-default:"false"`    // Rename track in {title}-{artist} format
-	UseSubDir         bool     `env:"USE_SUBDIRECTORY" env-default:"true"`
-	Discovery         string   `env:"LISTENBRAINZ_DISCOVERY" env-default:"playlist"`
-	Services          []string `env:"DOWNLOAD_SERVICES" env-default:"youtube"`
+	DownloadDir     string `env:"DOWNLOAD_DIR" env-default:"/data/"`
+	PathTemplate    string `env:"PATH_TEMPLATE"`
+	Youtube         Youtube
+	YoutubeMusic    YoutubeMusic
+	Slskd           Slskd
+	ExcludeLocal    bool
+	DownloadLimiter int `env:"DOWNLOAD_LIMITER" env-default:"1"` // rate limit download operations
+	// How many tracks are in flight at once, and how long to pause between
+	// them. Defaults are deliberately serial-and-slow: a single Soulseek search
+	// fans out to hundreds of peers, so three concurrent tracks is thousands of
+	// near-simultaneous connections. A commercial VPN reads that as abuse and
+	// cuts the session — which presents as a dead tunnel, not as a rate limit,
+	// and costs an evening to trace. Raise these only on a direct connection.
+	DownloadConcurrency int      `env:"DOWNLOAD_CONCURRENCY" env-default:"1"`
+	DownloadDelay       int      `env:"DOWNLOAD_DELAY" env-default:"5"`         // seconds between tracks
+	OverwriteMetadata   bool     `env:"OVERWRITE_METADATA" env-default:"false"` // overwrite metadata when migrating downloads
+	KeepPermissions     bool     `env:"KEEP_PERMISSIONS" env-default:"true"`    // keep original file permissions when migrating download
+	RenameTrack         bool     `env:"RENAME_TRACK" env-default:"false"`       // Rename track in {title}-{artist} format
+	UseSubDir           bool     `env:"USE_SUBDIRECTORY" env-default:"true"`
+	Discovery           string   `env:"LISTENBRAINZ_DISCOVERY" env-default:"playlist"`
+	Services            []string `env:"DOWNLOAD_SERVICES" env-default:"youtube"`
 }
 
 type Filters struct {
@@ -151,18 +159,18 @@ type SlskdMon struct {
 }
 
 type DiscoveryConfig struct {
-	Discovery    string `env:"DISCOVERY_SERVICE" env-default:"listenbrainz"`
+	Discovery       string   `env:"DISCOVERY_SERVICE" env-default:"listenbrainz"`
 	ArtistBlacklist []string `env:"ARTIST_BLACKLIST"`
-	Listenbrainz Listenbrainz
+	Listenbrainz    Listenbrainz
 }
 type Listenbrainz struct {
-	Discovery              string `env:"LISTENBRAINZ_DISCOVERY" env-default:"playlist"`
-	User                   string `env:"LISTENBRAINZ_USER"`
-	UserToken              string `env:"LISTENBRAINZ_USER_TOKEN"`
-	ImportPlaylist         string
-	SingleArtist           bool   `env:"SINGLE_ARTIST" env-default:"true"`
-	CoverArtSize           string `env:"COVER_ART_SIZE" env-default:"250"`
-	EnrichTrackMetadata	   bool   `env:"ENRICH_TRACK_METADATA" env-default:"false"`
+	Discovery           string `env:"LISTENBRAINZ_DISCOVERY" env-default:"playlist"`
+	User                string `env:"LISTENBRAINZ_USER"`
+	UserToken           string `env:"LISTENBRAINZ_USER_TOKEN"`
+	ImportPlaylist      string
+	SingleArtist        bool   `env:"SINGLE_ARTIST" env-default:"true"`
+	CoverArtSize        string `env:"COVER_ART_SIZE" env-default:"250"`
+	EnrichTrackMetadata bool   `env:"ENRICH_TRACK_METADATA" env-default:"false"`
 }
 
 type NotifyConfig struct {
