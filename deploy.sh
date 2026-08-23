@@ -57,6 +57,8 @@ docker info >/dev/null 2>&1 || die "cannot talk to the docker daemon (try: sudo 
 PREV_URL=""; PREV_LB=""; PREV_TZ=""; PREV_SCHEDULE=""; PREV_PATH=""
 if [[ -f "$ENV_FILE" ]]; then
     PREV_URL=$(grep -E '^SYSTEM_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+    # .env holds the URL as the CONTAINER sees it; offer it back in host terms.
+    PREV_URL=${PREV_URL//host.docker.internal/localhost}
     PREV_LB=$(grep -E '^LISTENBRAINZ_USER=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
 fi
 if [[ -f "$COMPOSE_FILE" ]]; then
@@ -81,6 +83,19 @@ case "$ping_status" in
     401|200) info "reachable" ;;
     *) warn "unexpected response from $SAMO_URL (HTTP $ping_status) — continuing anyway" ;;
 esac
+
+# The URL the CONTAINER must use, which is not always the one you just typed.
+# "localhost" resolves to the container itself, so a samo on this same host is
+# unreachable from inside — and the check above passes, because it ran here on
+# the host where localhost is correct. That combination is the single most
+# common way this deploy silently ends up doing nothing.
+CONTAINER_URL="$SAMO_URL"
+EXTRA_HOSTS=""
+if [[ "$SAMO_URL" =~ ^https?://(localhost|127\.0\.0\.1|\[::1\])(:|/|$) ]]; then
+    CONTAINER_URL=$(printf '%s' "$SAMO_URL" | sed -E 's#//(localhost|127\.0\.0\.1|\[::1\])#//host.docker.internal#')
+    EXTRA_HOSTS=$'\n    extra_hosts:\n      - "host.docker.internal:host-gateway"'
+    info "rewrote $SAMO_URL to $CONTAINER_URL for use inside the container"
+fi
 
 # An existing token keeps its name in samo's token list, so re-running deploy
 # does not litter the account with one token per run.
@@ -174,7 +189,7 @@ LISTENBRAINZ_DISCOVERY=playlist
 
 # --- Music system ---
 EXPLO_SYSTEM=samo
-SYSTEM_URL=$SAMO_URL
+SYSTEM_URL=$CONTAINER_URL
 API_KEY=$SAMO_TOKEN
 
 # --- Downloader ---
@@ -198,7 +213,7 @@ services:
     image: ghcr.io/bouliehaan/samo-explo:latest
     build: $INSTALL_DIR
     container_name: samo-explo
-    restart: unless-stopped
+    restart: unless-stopped$EXTRA_HOSTS
     env_file:
       - $ENV_FILE
     ports:
@@ -234,6 +249,23 @@ fi
 docker compose up -d
 sleep 3
 docker compose ps
+
+# Verify from INSIDE the container, which is the only place that counts. The
+# host-side probe earlier cannot catch a URL that only works out here, and a
+# scheduled job that cannot authenticate fails at 00:15 on a Tuesday with
+# nobody watching. --refresh-only exercises auth, library lookup and the scan
+# trigger, then exits.
+echo
+bold "6. Verifying from inside the container"
+if verify=$(docker exec samo-explo sh -c 'cd /opt/explo && ./explo --config /opt/explo/.env --refresh-only' 2>&1); then
+    printf '%s\n' "$verify" | grep -E '\[samo\]|library refresh' | sed 's/^/  /'
+    info "samo-explo can reach samo and authenticate"
+else
+    printf '%s\n' "$verify" | tail -5 | sed 's/^/  /'
+    warn "samo-explo is running but could NOT talk to samo — the schedule will do nothing until this is fixed."
+    warn "Re-run ./deploy.sh with an address the container can reach (a LAN IP works everywhere)."
+    exit 1
+fi
 
 echo
 bold "Done."
