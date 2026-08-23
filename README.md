@@ -116,6 +116,21 @@ default offers.
 A run that downloads nothing is not silent, at least: samo-explo reports
 `inFolder=0` and points at the download failures above it.
 
+## Why it does not re-download your Explore tracks
+
+samo keeps explo content out of its search index on purpose — "the explo silo",
+reachable by id through the Explo tab and the Explore playlist but never through
+search. That makes the obvious implementation of "skip what I already own"
+silently wrong: the drop folder is invisible to search, so every track in
+Explore would be re-downloaded every week, forever.
+
+So the samo client checks the explo **ledger** (`/api/v1/explo/tracks`) before
+searching. Titles are compared with a prefix allowance, because identification
+renames tracks to what MusicBrainz calls the recording — `Kids` comes back as
+`Kids (Soulwax remix)` — and that is the copy already fetched, not a different
+song. Reading the ledger needs an admin token; without one the fallback is
+simply re-downloading, which is wasteful but harmless.
+
 ## What lands in Explore
 
 Only tracks that are **new to your library**. Explo marks a recommendation you

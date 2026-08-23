@@ -117,11 +117,22 @@ type samoExploConfig struct {
 	Folder     string `json:"folder"`
 }
 
+type samoExploRow struct {
+	TrackID       string `json:"trackId"`
+	Status        string `json:"status"`
+	Title         string `json:"title"`
+	Artist        string `json:"artist"`
+	AlbumTitle    string `json:"albumTitle"`
+	MatchedTitle  string `json:"matchedTitle"`
+	MatchedArtist string `json:"matchedArtist"`
+}
+
 type samoExploTracks struct {
 	Summary struct {
 		InFolder   int `json:"inFolder"`
 		Identified int `json:"identified"`
 	} `json:"summary"`
+	Tracks []samoExploRow `json:"tracks"`
 }
 
 func (c *Samo) endpoint(path string) string {
@@ -227,7 +238,19 @@ func (c *Samo) AddLibrary() error {
 // run: once before downloading, so --download-mode=normal can skip what the
 // library already has, and once after the rescan to pick up the new arrivals.
 func (c *Samo) SearchSongs(tracks []*models.Track) error {
+	// samo deliberately keeps explo content out of its search index — "the
+	// explo silo", reachable by id through the Explo tab and Explore playlist
+	// but never through search. So a track already sitting in the drop folder
+	// is invisible here, and --download-mode=normal would re-fetch every track
+	// in Explore every single week, forever. The ledger is the only surface
+	// that sees them, so it gets checked first.
+	ledger := c.exploLedger()
+
 	for _, track := range tracks {
+		if c.matchExploLedger(track, ledger) {
+			slog.Debug("[samo] already in the explo drop folder", "track", track.CleanTitle)
+			continue
+		}
 		query := fmt.Sprintf("%s %s", util.CleanSearchTitle(track.CleanTitle), track.MainArtist)
 		found, err := c.searchTracks(query)
 		if err != nil {
@@ -249,6 +272,61 @@ func (c *Samo) SearchSongs(tracks []*models.Track) error {
 		}
 	}
 	return nil
+}
+
+// exploLedger lists what is currently in the drop folder. Failure is not fatal:
+// a non-admin token cannot read this, and the worst outcome is re-downloading
+// something we already have.
+func (c *Samo) exploLedger() []samoExploRow {
+	if !c.serverExplo {
+		return nil
+	}
+	body, err := c.request("GET", "/explo/tracks?limit=1000", nil)
+	if err != nil {
+		slog.Debug("[samo] could not read the explo ledger", "err", err.Error())
+		return nil
+	}
+	var status samoExploTracks
+	if err := util.ParseResp(body, &status); err != nil {
+		return nil
+	}
+	return status.Tracks
+}
+
+// matchExploLedger marks a track present if the drop folder already holds it.
+// Titles are compared with a prefix allowance because identification renames
+// to what MusicBrainz actually calls the recording — "Kids" comes back as
+// "Kids (Soulwax remix)", "Shooting Stars" as "Shooting Stars (Original)" —
+// and those are the copy we already fetched, not a different song.
+func (c *Samo) matchExploLedger(track *models.Track, ledger []samoExploRow) bool {
+	if len(ledger) == 0 {
+		return false
+	}
+	want := util.NormalizeTitle(track.CleanTitle)
+	if want == "" {
+		return false
+	}
+	for _, row := range ledger {
+		for _, candidate := range []struct{ title, artist string }{
+			{row.Title, row.Artist},
+			{row.MatchedTitle, row.MatchedArtist},
+		} {
+			if candidate.title == "" {
+				continue
+			}
+			got := util.NormalizeTitle(candidate.title)
+			if got != want && !strings.HasPrefix(got, want) {
+				continue
+			}
+			if track.MainArtist != "" && !util.ContainsFold(candidate.artist, track.MainArtist) {
+				continue
+			}
+			track.ID = row.TrackID
+			track.Present = true
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Samo) searchTracks(query string) ([]samoTrack, error) {
