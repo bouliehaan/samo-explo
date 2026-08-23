@@ -51,10 +51,26 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is not 
 command -v curl >/dev/null || die "curl is not installed"
 docker info >/dev/null 2>&1 || die "cannot talk to the docker daemon (try: sudo usermod -aG docker \$USER, then log out and back in)"
 
+# Seed DEFAULTS from a previous run so re-running is mostly pressing enter.
+# Deliberately defaults, not answers: ask() skips a prompt whose variable is
+# already set, and a re-run is usually someone fixing an answer they regret.
+PREV_URL=""; PREV_LB=""; PREV_TZ=""; PREV_SCHEDULE=""; PREV_PATH=""
+if [[ -f "$ENV_FILE" ]]; then
+    PREV_URL=$(grep -E '^SYSTEM_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+    PREV_LB=$(grep -E '^LISTENBRAINZ_USER=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+fi
+if [[ -f "$COMPOSE_FILE" ]]; then
+    PREV_TZ=$(sed -n 's/^ *- TZ=//p' "$COMPOSE_FILE" 2>/dev/null | head -1 || true)
+    PREV_SCHEDULE=$(sed -n 's/^ *- WEEKLY_EXPLORATION_SCHEDULE=//p' "$COMPOSE_FILE" 2>/dev/null | head -1 || true)
+    PREV_PATH=$(sed -n 's|^ *- \(.*\):/data/$|\1|p' "$COMPOSE_FILE" 2>/dev/null | head -1 || true)
+fi
+# Never re-offer a timezone that was invalid to begin with.
+[[ -n "$PREV_TZ" && -d /usr/share/zoneinfo && ! -f "/usr/share/zoneinfo/$PREV_TZ" ]] && PREV_TZ=""
+
 # ------------------------------------------------------------------ samo server
 echo
 bold "1. Samo server"
-ask SAMO_URL "Samo URL" "http://localhost:6969"
+ask SAMO_URL "Samo URL" "${PREV_URL:-http://localhost:6969}"
 SAMO_URL="${SAMO_URL%/}"
 
 # An unauthenticated 401 from a route that requires auth is the cleanest proof
@@ -113,24 +129,24 @@ server_folder=$(printf '%s' "$explo_cfg" | python3 -c 'import json,sys;d=json.lo
 if [[ -n "$server_folder" ]]; then
     info "samo is watching $server_folder"
     info "it will fingerprint each drop and build the Explore playlist itself"
-    ask DOWNLOAD_PATH "Local path to that same folder" "$server_folder"
+    ask DOWNLOAD_PATH "Local path to that same folder" "${PREV_PATH:-$server_folder}"
 else
     warn "samo's explo folder integration is off (Settings -> Explo)."
     warn "samo-explo will create an ordinary playlist instead of the Explore queue."
-    ask DOWNLOAD_PATH "Where should downloads go"
+    ask DOWNLOAD_PATH "Where should downloads go" "$PREV_PATH"
 fi
 mkdir -p "$DOWNLOAD_PATH" || die "cannot create $DOWNLOAD_PATH"
 
 # ------------------------------------------------------------------- listenbrainz
 echo
 bold "3. ListenBrainz"
-ask LB_USER "ListenBrainz username"
+ask LB_USER "ListenBrainz username" "$PREV_LB"
 # An unrecognised TZ does not error anywhere — the container's crond just
 # silently falls back to UTC, and the weekly job fires hours off from when you
 # meant it to. Names are the full zoneinfo form ("America/Denver"), never an
 # abbreviation ("MST", "DEN"), so check before writing it.
 while :; do
-    ask TZ_NAME "Timezone" "$(cat /etc/timezone 2>/dev/null || echo UTC)"
+    ask TZ_NAME "Timezone" "${PREV_TZ:-$(cat /etc/timezone 2>/dev/null || echo UTC)}"
     if [[ ! -d /usr/share/zoneinfo ]]; then
         break   # nothing to validate against; trust the answer
     fi
@@ -143,7 +159,7 @@ while :; do
     $ASSUME_YES && die "invalid timezone in --yes mode: $TZ_NAME"
     TZ_NAME=""
 done
-ask SCHEDULE "Weekly schedule (cron)" "15 00 * * 2"
+ask SCHEDULE "Weekly schedule (cron)" "${PREV_SCHEDULE:-15 00 * * 2}"
 
 # -------------------------------------------------------------------- write files
 echo
