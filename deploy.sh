@@ -55,11 +55,15 @@ docker info >/dev/null 2>&1 || die "cannot talk to the docker daemon (try: sudo 
 # Deliberately defaults, not answers: ask() skips a prompt whose variable is
 # already set, and a re-run is usually someone fixing an answer they regret.
 PREV_URL=""; PREV_LB=""; PREV_TZ=""; PREV_SCHEDULE=""; PREV_PATH=""
+PREV_DL=""; PREV_SLSKD_URL=""; PREV_SLSKD_KEY=""
 if [[ -f "$ENV_FILE" ]]; then
     PREV_URL=$(grep -E '^SYSTEM_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
     # .env holds the URL as the CONTAINER sees it; offer it back in host terms.
     PREV_URL=${PREV_URL//host.docker.internal/localhost}
     PREV_LB=$(grep -E '^LISTENBRAINZ_USER=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+    PREV_DL=$(grep -E '^DOWNLOAD_SERVICES=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+    PREV_SLSKD_URL=$(grep -E '^SLSKD_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+    PREV_SLSKD_KEY=$(grep -E '^SLSKD_API_KEY=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
 fi
 if [[ -f "$COMPOSE_FILE" ]]; then
     PREV_TZ=$(sed -n 's/^ *- TZ=//p' "$COMPOSE_FILE" 2>/dev/null | head -1 || true)
@@ -197,9 +201,61 @@ while :; do
 done
 ask SCHEDULE "Weekly schedule (cron)" "${PREV_SCHEDULE:-15 00 * * 2}"
 
+# --------------------------------------------------------------------- downloader
+echo
+bold "4. Downloader"
+info "slskd (Soulseek) is strongly preferred: YouTube answers most servers with"
+info "\"Sign in to confirm you're not a bot\" and fails every track."
+ask DL_SERVICE "Download via (slskd/youtube)" "${PREV_DL:-slskd}"
+
+SLSKD_BLOCK=""
+SLSKD_MOUNT=""
+if [[ "$DL_SERVICE" == "slskd" ]]; then
+    # Default to a LAN address rather than localhost. slskd API keys carry a
+    # cidr restriction, and the common 192.168.x.0/24 does NOT contain
+    # 127.0.0.1 — with host networking a localhost request comes from loopback
+    # and gets a flat 401 that looks like a bad key.
+    lan_ip=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    ask SLSKD_URL "slskd URL" "${PREV_SLSKD_URL:-http://${lan_ip:-localhost}:5030}"
+    SLSKD_URL="${SLSKD_URL%/}"
+    if [[ -n "$PREV_SLSKD_KEY" ]]; then
+        SLSKD_KEY="${SLSKD_KEY:-$PREV_SLSKD_KEY}"
+        info "reusing the slskd API key already in .env"
+    else
+        ask_secret SLSKD_KEY "slskd API key"
+    fi
+
+    code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 -H "X-API-Key: $SLSKD_KEY" "$SLSKD_URL/api/v0/application" 2>/dev/null || true)
+    case "$code" in
+        200) info "slskd API reachable and the key works" ;;
+        401) die "slskd rejected the key (401). If the key is right, check its 'cidr:' in slskd.yml covers the address these requests come FROM — use a LAN IP rather than localhost." ;;
+        000) die "cannot reach slskd at $SLSKD_URL" ;;
+        *)   warn "slskd answered HTTP $code — continuing, but this may not work" ;;
+    esac
+
+    # Explo moves finished files out of slskd's download folder, so it needs to
+    # see that folder. slskd reports its own container-side path; docker tells
+    # us which host directory is mounted there.
+    slskd_dl=$(curl -s -m 10 -H "X-API-Key: $SLSKD_KEY" "$SLSKD_URL/api/v0/options" 2>/dev/null \
+        | python3 -c 'import json,sys; print((json.load(sys.stdin).get("directories") or {}).get("downloads",""))' 2>/dev/null || true)
+    slskd_host=""
+    if [[ -n "$slskd_dl" ]]; then
+        slskd_host=$(docker inspect slskd --format '{{range .Mounts}}{{.Source}}|{{.Destination}}
+{{end}}' 2>/dev/null | awk -F'|' -v d="$slskd_dl" '$2==d{print $1; exit}' || true)
+    fi
+    ask SLSKD_PATH "slskd downloads folder on this host" "$slskd_host"
+    [[ -d "$SLSKD_PATH" ]] || die "$SLSKD_PATH does not exist"
+
+    SLSKD_MOUNT=$'\n      - '"$SLSKD_PATH:/slskd"
+    SLSKD_BLOCK="SLSKD_URL=$SLSKD_URL
+SLSKD_API_KEY=$SLSKD_KEY
+SLSKD_DIR=/slskd/
+MIGRATE_DOWNLOADS=true"
+fi
+
 # -------------------------------------------------------------------- write files
 echo
-bold "4. Writing configuration"
+bold "5. Writing configuration"
 ENV_BACKUP=""
 if [[ -f "$ENV_FILE" ]]; then
     ENV_BACKUP="$ENV_FILE.bak.$(date +%Y%m%d%H%M%S)"
@@ -227,9 +283,10 @@ API_KEY=$SAMO_TOKEN
 # USE_SUBDIRECTORY must stay true: --clean-downloads is gated on it, and that
 # is what rotates the folder each week.
 DOWNLOAD_DIR=/data/
-DOWNLOAD_SERVICES=youtube
+DOWNLOAD_SERVICES=$DL_SERVICE
 TRACK_EXTENSION=mp3
 USE_SUBDIRECTORY=true
+$SLSKD_BLOCK
 
 # --- Misc ---
 SLEEP=2
@@ -293,7 +350,7 @@ $NETWORK_BLOCK
       - $ENV_FILE
     volumes:
       - $ENV_FILE:/opt/explo/.env
-      - $DOWNLOAD_PATH:/data/Weekly-Exploration$COOKIE_MOUNT
+      - $DOWNLOAD_PATH:/data/Weekly-Exploration$SLSKD_MOUNT$COOKIE_MOUNT
     environment:
       - PUID=$(id -u)
       - PGID=$(id -g)
@@ -311,7 +368,7 @@ info "wrote docker-compose.yaml"
 
 # --------------------------------------------------------------------- start it
 echo
-bold "5. Starting"
+bold "6. Starting"
 cd "$INSTALL_DIR"
 if docker compose pull 2>/dev/null; then
     info "pulled the published image"
@@ -329,7 +386,7 @@ docker compose ps
 # nobody watching. --refresh-only exercises auth, library lookup and the scan
 # trigger, then exits.
 echo
-bold "6. Verifying from inside the container"
+bold "7. Verifying from inside the container"
 if verify=$(docker exec samo-explo sh -c 'cd /opt/explo && ./explo --config /opt/explo/.env --refresh-only' 2>&1); then
     printf '%s\n' "$verify" | grep -E '\[samo\]|library refresh' | sed 's/^/  /'
     info "samo-explo can reach samo and authenticate"
@@ -355,7 +412,7 @@ info "Web UI:    http://localhost:7288"
 info "Logs:      docker compose -f $COMPOSE_FILE logs -f"
 info "Run now:   docker exec samo-explo sh -c 'cd /opt/explo && ./explo --replace-playlist --clean-downloads'"
 echo
-if [[ -z "$COOKIE_MOUNT" ]] && grep -q '^DOWNLOAD_SERVICES=.*youtube' "$ENV_FILE"; then
+if [[ -z "$COOKIE_MOUNT" && "$DL_SERVICE" == *youtube* ]]; then
     echo
     warn "No cookies.txt present. YouTube now answers most servers with"
     warn "\"Sign in to confirm you're not a bot\", which fails every download."

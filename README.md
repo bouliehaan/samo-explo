@@ -100,11 +100,18 @@ file at `cookies.txt` next to `deploy.sh`, and re-run — it gets mounted for
 you. Worth using a throwaway Google account rather than your main one: this is
 bulk automated fetching, and accounts do get flagged for it.
 
-**Soulseek instead.** Set `DOWNLOAD_SERVICES=slskd` with `SLSKD_URL` and
-`SLSKD_API_KEY` pointing at an [slskd](https://github.com/slskd/slskd)
-instance. No bot checks, no cookies to keep fresh, and generally better audio
-than a YouTube rip. This is the better answer for something that has to run
-unattended every week.
+**Soulseek instead — the recommended route.** `deploy.sh` asks which downloader
+you want and configures [slskd](https://github.com/slskd/slskd) for you: it
+verifies the API key, reads slskd's own download directory out of its API, works
+out which host directory is mounted there via `docker inspect`, and mounts that
+into the container so finished files can be moved into the drop folder. No bot
+checks, no cookies to keep fresh, better audio than a YouTube rip.
+
+One trap it handles for you: slskd API keys carry a `cidr:` restriction, and the
+usual `192.168.x.0/24` does **not** contain `127.0.0.1`. With host networking a
+request to `localhost:5030` arrives from loopback and is refused with a flat
+`401` that looks exactly like a wrong key. Use a LAN address, which is what the
+default offers.
 
 A run that downloads nothing is not silent, at least: samo-explo reports
 `inFolder=0` and points at the download failures above it.
