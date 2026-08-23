@@ -84,17 +84,38 @@ case "$ping_status" in
     *) warn "unexpected response from $SAMO_URL (HTTP $ping_status) — continuing anyway" ;;
 esac
 
-# The URL the CONTAINER must use, which is not always the one you just typed.
-# "localhost" resolves to the container itself, so a samo on this same host is
-# unreachable from inside — and the check above passes, because it ran here on
-# the host where localhost is correct. That combination is the single most
-# common way this deploy silently ends up doing nothing.
+# How the container should be networked, which is really the question "can it
+# reach samo at all".
+#
+# A samo on THIS host is the common case and the one bridge networking handles
+# worst. Two separate things break it: `localhost` inside a container is the
+# container, and on a ufw host every packet from the docker bridge to the host
+# is DROPPED — which surfaces as a connection timeout with no log anywhere,
+# not as a refusal. Host networking removes the hop altogether, so an address
+# that works in this shell works in the container. It is also exactly how
+# samo-server itself runs.
+#
+# Docker Desktop has no real host networking, but does resolve
+# host.docker.internal, so that is the fallback off Linux.
+SAMO_HOST=$(printf '%s' "$SAMO_URL" | sed -E 's#^https?://##; s#/.*$##; s#:[0-9]+$##; s#^\[(.*)\]$#\1#')
 CONTAINER_URL="$SAMO_URL"
-EXTRA_HOSTS=""
-if [[ "$SAMO_URL" =~ ^https?://(localhost|127\.0\.0\.1|\[::1\])(:|/|$) ]]; then
-    CONTAINER_URL=$(printf '%s' "$SAMO_URL" | sed -E 's#//(localhost|127\.0\.0\.1|\[::1\])#//host.docker.internal#')
-    EXTRA_HOSTS=$'\n    extra_hosts:\n      - "host.docker.internal:host-gateway"'
-    info "rewrote $SAMO_URL to $CONTAINER_URL for use inside the container"
+USE_HOST_NET=false
+SAMO_IS_LOCAL=false
+
+if [[ "$SAMO_HOST" =~ ^(localhost|127\.0\.0\.1|::1)$ ]]; then
+    SAMO_IS_LOCAL=true
+elif ip -4 -o addr show 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -qx "$SAMO_HOST"; then
+    SAMO_IS_LOCAL=true
+fi
+
+if $SAMO_IS_LOCAL; then
+    if [[ "$(uname -s)" == "Linux" ]]; then
+        USE_HOST_NET=true
+        info "samo is on this host — using host networking so the container reaches it the same way you do"
+    else
+        CONTAINER_URL=$(printf '%s' "$SAMO_URL" | sed -E 's#//(localhost|127\.0\.0\.1|\[::1\])#//host.docker.internal#')
+        info "samo is on this host — the container will use $CONTAINER_URL"
+    fi
 fi
 
 # An existing token keeps its name in samo's token list, so re-running deploy
@@ -205,6 +226,14 @@ EOF
 chmod 600 "$ENV_FILE"
 info "wrote .env (mode 600 — it holds your API token)"
 
+if $USE_HOST_NET; then
+    NETWORK_BLOCK="    network_mode: host"     # binds the web UI on :7288 directly
+elif [[ "$CONTAINER_URL" == *host.docker.internal* ]]; then
+    NETWORK_BLOCK=$'    ports:\n      - "7288:7288"\n    extra_hosts:\n      - "host.docker.internal:host-gateway"'
+else
+    NETWORK_BLOCK=$'    ports:\n      - "7288:7288"'
+fi
+
 cat > "$COMPOSE_FILE" <<EOF
 services:
   explo:
@@ -213,11 +242,10 @@ services:
     image: ghcr.io/bouliehaan/samo-explo:latest
     build: $INSTALL_DIR
     container_name: samo-explo
-    restart: unless-stopped$EXTRA_HOSTS
+    restart: unless-stopped
+$NETWORK_BLOCK
     env_file:
       - $ENV_FILE
-    ports:
-      - "7288:7288"
     volumes:
       - $ENV_FILE:/opt/explo/.env
       - $DOWNLOAD_PATH:/data/
@@ -263,7 +291,16 @@ if verify=$(docker exec samo-explo sh -c 'cd /opt/explo && ./explo --config /opt
 else
     printf '%s\n' "$verify" | tail -5 | sed 's/^/  /'
     warn "samo-explo is running but could NOT talk to samo — the schedule will do nothing until this is fixed."
-    warn "Re-run ./deploy.sh with an address the container can reach (a LAN IP works everywhere)."
+    if [[ "$verify" == *"deadline exceeded"* || "$verify" == *"timeout"* ]] && ! $USE_HOST_NET; then
+        # A timeout rather than a refusal means the packets left and died. On a
+        # ufw host that is almost always the bridge -> host path being dropped.
+        warn "A timeout (not a refusal) usually means a host firewall is dropping traffic from the docker bridge."
+        if systemctl is-active ufw >/dev/null 2>&1; then
+            warn "ufw is active on this host, which is very likely the cause. Either:"
+            warn "  - point samo-explo at samo over a network the container can use, or"
+            warn "  - sudo ufw allow in on $(ip -4 -o addr show 2>/dev/null | awk '/172\./{print $2; exit}') to port ${SAMO_URL##*:}"
+        fi
+    fi
     exit 1
 fi
 
