@@ -25,13 +25,26 @@ RUN GOOS=linux GOARCH=$TARGETARCH go build -ldflags "-X explo/src/config.Version
 FROM python:3.12-alpine
 
 # Install runtime deps: libc compat, ffmpeg, yt-dlp, tzdata, shadow for user management, su-exec for user switching
-RUN apk add --no-cache \
-    libc6-compat \
-    ffmpeg \
-    yt-dlp \
-    tzdata \
-    shadow \
-    su-exec
+#
+# Retried, because alpine's yt-dlp pulls in deno (a ~130MB single binary, for
+# YouTube's JS challenges) and that extraction fails with a bare "I/O error"
+# often enough to kill an otherwise fine image build. A first-run build failure
+# is the worst possible time to meet a flaky mirror, so try three times and
+# then assert that what we actually need is present.
+RUN for attempt in 1 2 3; do \
+        apk add --no-cache \
+            libc6-compat \
+            ffmpeg \
+            yt-dlp \
+            tzdata \
+            shadow \
+            su-exec && break; \
+        echo "apk add failed (attempt ${attempt}/3), retrying in 5s"; \
+        sleep 5; \
+    done; \
+    for tool in yt-dlp ffmpeg su-exec; do \
+        command -v "$tool" >/dev/null || { echo "FATAL: $tool missing after 3 attempts"; exit 1; }; \
+    done
 
 # Install ytmusicapi in the container
 RUN pip install --no-cache-dir ytmusicapi

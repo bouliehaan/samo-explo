@@ -125,7 +125,24 @@ mkdir -p "$DOWNLOAD_PATH" || die "cannot create $DOWNLOAD_PATH"
 echo
 bold "3. ListenBrainz"
 ask LB_USER "ListenBrainz username"
-ask TZ_NAME "Timezone" "$(cat /etc/timezone 2>/dev/null || echo UTC)"
+# An unrecognised TZ does not error anywhere — the container's crond just
+# silently falls back to UTC, and the weekly job fires hours off from when you
+# meant it to. Names are the full zoneinfo form ("America/Denver"), never an
+# abbreviation ("MST", "DEN"), so check before writing it.
+while :; do
+    ask TZ_NAME "Timezone" "$(cat /etc/timezone 2>/dev/null || echo UTC)"
+    if [[ ! -d /usr/share/zoneinfo ]]; then
+        break   # nothing to validate against; trust the answer
+    fi
+    if [[ -f "/usr/share/zoneinfo/$TZ_NAME" ]]; then
+        break
+    fi
+    warn "'$TZ_NAME' is not a zoneinfo name — use the Region/City form, e.g. America/Denver"
+    guess=$(find /usr/share/zoneinfo -type f -ipath "*${TZ_NAME}*" 2>/dev/null | head -3 | sed 's|/usr/share/zoneinfo/||')
+    [[ -n "$guess" ]] && { info "did you mean:"; printf '      %s\n' $guess; }
+    $ASSUME_YES && die "invalid timezone in --yes mode: $TZ_NAME"
+    TZ_NAME=""
+done
 ask SCHEDULE "Weekly schedule (cron)" "15 00 * * 2"
 
 # -------------------------------------------------------------------- write files

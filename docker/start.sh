@@ -52,7 +52,7 @@ fi
 
 # $CRON_SHCEDULE was deprecated in v0.11.0, keeping this block for backwards compatibility
 if [ -n "$CRON_SCHEDULE" ]; then
-    echo "$CRON_SCHEDULE apk add --no-cache --upgrade yt-dlp && cd /opt/explo && $RUNNER ./explo --config \"$_cfg\" >> /proc/1/fd/1 2>&1" > /etc/crontabs/root
+    echo "$CRON_SCHEDULE { apk add --no-cache --upgrade yt-dlp || echo '[warn] yt-dlp refresh failed, running with the installed version'; }; cd /opt/explo && $RUNNER ./explo --config \"$_cfg\" >> /proc/1/fd/1 2>&1" > /etc/crontabs/root
     chmod 600 /etc/crontabs/root
     echo "[setup] Registered single CRON_SCHEDULE job: $CRON_SCHEDULE"
     crond -f -l 2
@@ -70,8 +70,12 @@ for var in $(env | grep "_SCHEDULE=" | cut -d= -f1); do
     continue
   fi
 
-  # Default: just run explo if flags are empty
-  cmd="apk add --no-cache --upgrade yt-dlp && cd /opt/explo && $RUNNER ./explo --config \"$_cfg\" $flags >> /proc/1/fd/1 2>&1"
+  # Default: just run explo if flags are empty.
+  #
+  # The yt-dlp refresh is deliberately NOT chained with && — a transient alpine
+  # mirror failure must not stop the run. yt-dlp is already in the image; an
+  # older yt-dlp is worth far more than a week that silently downloads nothing.
+  cmd="{ apk add --no-cache --upgrade yt-dlp || echo '[warn] yt-dlp refresh failed, running with the installed version'; }; cd /opt/explo && $RUNNER ./explo --config \"$_cfg\" $flags >> /proc/1/fd/1 2>&1"
 
   echo "$schedule $cmd" >> /etc/crontabs/root
   echo "[setup] Registered job: $job"
@@ -85,7 +89,7 @@ echo "[setup] Starting cron..."
 
 if [ "$EXECUTE_ON_START" = "true" ]; then
     echo "[setup] Executing startup task..."  
-    apk add --no-cache --upgrade yt-dlp && cd /opt/explo && $RUNNER ./explo --config "$_cfg" $START_FLAGS
+    { apk add --no-cache --upgrade yt-dlp || echo '[warn] yt-dlp refresh failed, running with the installed version'; }; cd /opt/explo && $RUNNER ./explo --config "$_cfg" $START_FLAGS
     
 fi
 crond -f -l 2
