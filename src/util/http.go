@@ -63,10 +63,25 @@ func (c *HttpClient) MakeRequest(method, url string, payload io.Reader, headers 
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		slog.Debug("response info", logging.RuntimeAttr(string(body)))
-		return nil, fmt.Errorf("got %d from %s", resp.StatusCode, url)
+		return nil, &StatusError{Status: resp.StatusCode, URL: url}
 	}
 
 	return body, nil
+}
+
+// StatusError carries the HTTP status alongside the message, so a caller can
+// tell a rate limit apart from a dead peer. Retrying a 429 immediately is the
+// same as not retrying at all; retrying a 404 immediately is correct.
+//
+// The message is byte-identical to what this used to return, so anything
+// matching on the text keeps working.
+type StatusError struct {
+	Status int
+	URL    string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("got %d from %s", e.Status, e.URL)
 }
 
 func ParseResp[T any](body []byte, target *T) error {
@@ -123,8 +138,8 @@ func DownloadCover(url, coversDir string) (string, string) {
 	parts := strings.Split(strings.TrimRight(url, "/"), "/")
 
 	if len(parts) < 2 {
-	return "", ""
-}
+		return "", ""
+	}
 	// Spotify CDN: https://i.scdn.co/image/<hash>  → use last segment
 	// CAA:         https://coverartarchive.org/release/<mbid>/front-250 → use second-to-last
 	id := parts[len(parts)-2]

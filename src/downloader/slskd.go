@@ -10,6 +10,7 @@ import (
 	"explo/src/util"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -62,23 +63,23 @@ type DownloadStatus []struct {
 	Directories []Directories `json:"directories"`
 }
 type DownloadFiles struct {
-	ID               string          `json:"id"`
-	Username         string          `json:"username"`
-	Direction        string          `json:"direction"`
-	Name             string 		 `json:"filename"`
-	Size             int             `json:"size"`
-	StartOffset      int             `json:"startOffset"`
-	State            string          `json:"state"`
-	RequestedAt      string          `json:"requestedAt"`
-	EnqueuedAt       string          `json:"enqueuedAt"`
-	StartedAt        time.Time       `json:"startedAt"`
-	EndedAt          time.Time       `json:"endedAt"`
-	BytesTransferred int             `json:"bytesTransferred"`
-	AverageSpeed     float64         `json:"averageSpeed"`
-	BytesRemaining   int             `json:"bytesRemaining"`
-	ElapsedTime      string          `json:"elapsedTime"`
-	PercentComplete  float64         `json:"percentComplete"`
-	RemainingTime    string          `json:"remainingTime"`
+	ID               string    `json:"id"`
+	Username         string    `json:"username"`
+	Direction        string    `json:"direction"`
+	Name             string    `json:"filename"`
+	Size             int       `json:"size"`
+	StartOffset      int       `json:"startOffset"`
+	State            string    `json:"state"`
+	RequestedAt      string    `json:"requestedAt"`
+	EnqueuedAt       string    `json:"enqueuedAt"`
+	StartedAt        time.Time `json:"startedAt"`
+	EndedAt          time.Time `json:"endedAt"`
+	BytesTransferred int       `json:"bytesTransferred"`
+	AverageSpeed     float64   `json:"averageSpeed"`
+	BytesRemaining   int       `json:"bytesRemaining"`
+	ElapsedTime      string    `json:"elapsedTime"`
+	PercentComplete  float64   `json:"percentComplete"`
+	RemainingTime    string    `json:"remainingTime"`
 }
 type Directories struct {
 	Directory string          `json:"directory"`
@@ -120,13 +121,13 @@ func (c *Slskd) AddHeader() {
 }
 
 func (c *Slskd) GetConf() (MonitorConfig, error) {
-	return  MonitorConfig{
-		CheckInterval: time.Duration(c.Cfg.MonitorConfig.Interval) * time.Minute,
+	return MonitorConfig{
+		CheckInterval:   time.Duration(c.Cfg.MonitorConfig.Interval) * time.Minute,
 		MonitorDuration: time.Duration(c.Cfg.MonitorConfig.Duration) * time.Minute,
 		MigrateDownload: c.Cfg.MigrateDL,
-		ToDir: c.DownloadDir,
-		FromDir: c.Cfg.SlskdDir,
-		Service: "slskd",
+		ToDir:           c.DownloadDir,
+		FromDir:         c.Cfg.SlskdDir,
+		Service:         "slskd",
 	}, nil
 }
 
@@ -137,41 +138,40 @@ func (c *Slskd) QueryTrack(track *models.Track) error {
 	wildcardSearch := false
 	trackDetails := fmt.Sprintf("%s - %s", track.CleanTitle, track.Artist)
 
-	retry:
-		ID, err := c.searchTrack(trackDetails)
-		if err != nil {
-			return err
+retry:
+	ID, err := c.searchTrack(trackDetails)
+	if err != nil {
+		return err
+	}
+	slog.Info("initiating search", "track", trackDetails)
+
+	cleanup := func() {
+		if err := c.deleteSearch(ID); err != nil {
+			slog.Warn("failed to delete search", "context", err.Error())
 		}
-		slog.Info("initiating search", "track", trackDetails)
+	}
 
-		cleanup := func() {
-    		if err := c.deleteSearch(ID); err != nil {
-        		slog.Warn("failed to delete search", "context", err.Error())
-    		}
-		}
+	completed, err := c.searchStatus(ID, trackDetails, 0)
+	if errors.Is(err, errNoRes) && !wildcardSearch {
+		cleanup()
+		wildcardSearch = true
+		trackDetails = fmt.Sprintf("%s - %s", track.CleanTitle, wildcardArtist(track.Artist))
+		slog.Debug("no result found with artist full name, trying with wildcard", "query", trackDetails)
+		goto retry
+	}
 
-		completed, err := c.searchStatus(ID, trackDetails, 0)
-		if errors.Is(err, errNoRes) && !wildcardSearch {
-			cleanup()
-			wildcardSearch = true
-			trackDetails = fmt.Sprintf("%s - %s", track.CleanTitle, wildcardArtist(track.Artist))
-			slog.Debug("no result found with artist full name, trying with wildcard", "query", trackDetails)
-			goto retry
-		}
+	if err != nil {
+		cleanup()
+		return err
+	}
 
-		if err != nil {
-			cleanup()
-   	 		return err
-		}
+	if !completed {
+		cleanup()
+		return fmt.Errorf("search not completed for %s, skipping track", trackDetails)
+	}
 
-		if !completed {
-			cleanup()
-			return fmt.Errorf("search not completed for %s, skipping track", trackDetails)
-		}
-
-
-		track.ID = ID
-		return nil
+	track.ID = ID
+	return nil
 }
 
 func (c *Slskd) GetTrack(track *models.Track) error {
@@ -302,7 +302,7 @@ func (c Slskd) CollectFiles(track models.Track, searchResults SearchResults) ([]
 				if (matchesArtist || matchesAlbum) && matchesTitle {
 					file.Username = result.Username
 					if !yield(file) {
-							return
+						return
 					}
 				}
 			}
@@ -310,7 +310,7 @@ func (c Slskd) CollectFiles(track models.Track, searchResults SearchResults) ([]
 	})
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no tracks passed collection for %s - %s", track.MainArtist, track.CleanTitle)
-	} 
+	}
 	return files, nil
 }
 
@@ -344,8 +344,27 @@ func (c Slskd) filterFiles(files []File) ([]File, error) {
 	return filtered, nil
 }
 
+// queueRetryDelay spaces out attempts at different peers; queueRateLimitDelay
+// is the longer pause after a 429.
+const (
+	queueRetryDelay     = 2 * time.Second
+	queueRateLimitDelay = 15 * time.Second
+)
+
+// queueDownload asks slskd to fetch the track, trying each candidate peer in
+// turn.
+//
+// The attempts are spaced. They used to fire back to back inside a single
+// second, which meant that when slskd answered 429 the two remaining retries
+// were sent well inside the window that produced the 429 and failed for the
+// same reason — three attempts, one outcome. A rate limit is the one error
+// where retrying instantly is provably useless, so it gets the longer wait.
 func (c Slskd) queueDownload(files []File, track *models.Track) error {
+	delay := time.Duration(0)
 	for i, file := range files {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
 		reqParams := fmt.Sprintf("/api/v0/transfers/downloads/%s", file.Username)
 		payload := []DownloadPayload{
 			{
@@ -367,6 +386,14 @@ func (c Slskd) queueDownload(files []File, track *models.Track) error {
 			return nil
 		}
 
+		var statusErr *util.StatusError
+		if errors.As(err, &statusErr) && statusErr.Status == http.StatusTooManyRequests {
+			delay = queueRateLimitDelay
+			slog.Warn(fmt.Sprintf("[%d/%d] slskd is rate limiting; waiting %s before the next peer for '%s - %s'",
+				i+1, len(files), queueRateLimitDelay, track.CleanTitle, track.Artist))
+			continue
+		}
+		delay = queueRetryDelay
 		slog.Warn(fmt.Sprintf("[%d/%d] failed to queue download for '%s - %s': %s", i+1, len(files), track.CleanTitle, track.Artist, err.Error()))
 		continue
 	}
@@ -375,7 +402,6 @@ func (c Slskd) queueDownload(files []File, track *models.Track) error {
 	}
 	return fmt.Errorf("couldn't download track: %s - %s", track.CleanTitle, track.Artist)
 }
-
 
 func (c *Slskd) GetDownloadStatus(tracks []*models.Track) (map[string]FileStatus, error) {
 	reqParams := "/api/v0/transfers/downloads"
@@ -399,12 +425,12 @@ func (c *Slskd) GetDownloadStatus(tracks []*models.Track) (map[string]FileStatus
 				for _, file := range dir.Files {
 					if string(file.Name) == track.File {
 						fileStatuses[track.File] = FileStatus{
-							ID: file.ID,
-							Size: file.Size,
-							State: normalize(file.State),
+							ID:               file.ID,
+							Size:             file.Size,
+							State:            normalize(file.State),
 							BytesTransferred: file.BytesTransferred,
-							BytesRemaining: file.BytesRemaining,
-							PercentComplete: file.PercentComplete,
+							BytesRemaining:   file.BytesRemaining,
+							PercentComplete:  file.PercentComplete,
 						}
 					}
 				}
@@ -454,28 +480,28 @@ func wildcardArtist(artist string) string {
 	if len(artist) >= 4 && strings.EqualFold(artist[:4], "the ") {
 		prefix = artist[:4]
 		artist = strings.TrimSpace(artist[4:])
-}
-    r := []rune(strings.TrimSpace(artist))
+	}
+	r := []rune(strings.TrimSpace(artist))
 
-    if len(r) < 3 {
-        return artist
-    }
+	if len(r) < 3 {
+		return artist
+	}
 
-    r[0] = '*'
-    return prefix + string(r)
+	r[0] = '*'
+	return prefix + string(r)
 }
 
 // different failure states slskd has (format is "Completed,Rejected", "Errored,Cancelled" etc..)
-var failureStates = map[string]struct{} {
-	"Aborted": {},
-	"TimedOut": {},
-	"Rejected": {},
-	"Errored":  {},
+var failureStates = map[string]struct{}{
+	"Aborted":   {},
+	"TimedOut":  {},
+	"Rejected":  {},
+	"Errored":   {},
 	"Cancelled": {},
 }
 
 // return a single error state for failed downloads
-func normalize(state string) string{
+func normalize(state string) string {
 	parts := strings.SplitSeq(state, ",")
 
 	for p := range parts {
