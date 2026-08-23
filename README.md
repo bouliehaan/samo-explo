@@ -76,17 +76,21 @@ never exits, ignores any CLI flags you pass it (`start.sh` does not read `$@`),
 and vanishes the next time the Docker daemon restarts. Set the schedule in
 `docker-compose.yaml` and let the container do it.
 
-**`--persist=false` is what rotates the folder.** It deletes last week's drop
-before fetching this week's, which is what makes samo's Explore playlist a
-"this week" queue rather than an ever-growing pile. Upstream has since split
-this into `--replace-playlist` and `--clean-downloads` (default off), so if you
-move to a newer base image, set `--clean-downloads` explicitly or the rotation
-silently stops.
+**`--clean-downloads` is what rotates the folder, and it defaults to off.** It
+deletes last week's drop before fetching this week's, which is what keeps samo's
+Explore playlist a "this week" queue rather than an ever-growing pile. It also
+requires `USE_SUBDIRECTORY=true`.
+
+Older guides say `--persist=false` does this. It used to. In this codebase that
+flag is parsed and then **never read** — it prints a deprecation warning and
+changes nothing — so a config carried over from an older image looks correct,
+runs without error, and quietly stops rotating. If your Explore playlist is
+growing instead of turning over, this is why.
 
 ## Manual runs
 
 ```sh
-docker exec samo-explo sh -c 'cd /opt/explo && ./explo --persist=false'
+docker exec samo-explo sh -c 'cd /opt/explo && ./explo --clean-downloads'
 ```
 
 The web UI on `http://localhost:7288` has a run button and a log view.

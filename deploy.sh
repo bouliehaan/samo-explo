@@ -207,9 +207,17 @@ services:
       - $ENV_FILE:/opt/explo/.env
       - $DOWNLOAD_PATH:/data/
     environment:
+      - PUID=$(id -u)
+      - PGID=$(id -g)
       - TZ=$TZ_NAME
       - WEEKLY_EXPLORATION_SCHEDULE=$SCHEDULE
-      - WEEKLY_EXPLORATION_FLAGS=--persist=false
+      # --clean-downloads is what rotates the drop folder: it deletes last
+      # week's tracks before fetching this week's, which is what keeps samo's
+      # Explore playlist a "this week" queue instead of an ever-growing pile.
+      # It defaults to OFF and requires USE_SUBDIRECTORY=true (set in .env).
+      # Do not use the older --persist=false here — in this codebase that flag
+      # is parsed and then never read, so it silently does nothing at all.
+      - WEEKLY_EXPLORATION_FLAGS=--clean-downloads
 EOF
 info "wrote docker-compose.yaml"
 
@@ -231,7 +239,7 @@ echo
 bold "Done."
 info "Web UI:    http://localhost:7288"
 info "Logs:      docker compose -f $COMPOSE_FILE logs -f"
-info "Run now:   docker exec samo-explo sh -c 'cd /opt/explo && ./explo --persist=false'"
+info "Run now:   docker exec samo-explo sh -c 'cd /opt/explo && ./explo --clean-downloads'"
 echo
 info "The container schedules itself from WEEKLY_EXPLORATION_SCHEDULE."
 info "Do not also add a cron entry — 'docker compose run' starts a SECOND scheduler"
