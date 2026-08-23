@@ -200,7 +200,12 @@ ask SCHEDULE "Weekly schedule (cron)" "${PREV_SCHEDULE:-15 00 * * 2}"
 # -------------------------------------------------------------------- write files
 echo
 bold "4. Writing configuration"
-[[ -f "$ENV_FILE" ]] && cp -a "$ENV_FILE" "$ENV_FILE.bak.$(date +%Y%m%d%H%M%S)" && info "backed up the previous .env"
+ENV_BACKUP=""
+if [[ -f "$ENV_FILE" ]]; then
+    ENV_BACKUP="$ENV_FILE.bak.$(date +%Y%m%d%H%M%S)"
+    cp -a "$ENV_FILE" "$ENV_BACKUP"
+    info "backed up the previous .env"
+fi
 
 cat > "$ENV_FILE" <<EOF
 # --- Discovery ---
@@ -214,6 +219,14 @@ SYSTEM_URL=$CONTAINER_URL
 API_KEY=$SAMO_TOKEN
 
 # --- Downloader ---
+# DOWNLOAD_DIR is a path INSIDE the container, not on the host. The drop folder
+# is bind-mounted to /data/Weekly-Exploration, and USE_SUBDIRECTORY makes Explo
+# append the playlist name to DOWNLOAD_DIR — so /data/ + Weekly-Exploration
+# lands exactly on the mount. Setting this to a host path (which the setup
+# wizard will happily accept) makes every run die on "mkdir: permission denied".
+# USE_SUBDIRECTORY must stay true: --clean-downloads is gated on it, and that
+# is what rotates the folder each week.
+DOWNLOAD_DIR=/data/
 DOWNLOAD_SERVICES=youtube
 TRACK_EXTENSION=mp3
 USE_SUBDIRECTORY=true
@@ -223,6 +236,29 @@ SLEEP=2
 LOG_LEVEL=INFO
 PLAYLISTNAME_FORMAT=date
 EOF
+# Carry over anything the web UI wizard (or you) added that this script does not
+# manage — a LISTENBRAINZ_USER_TOKEN above all. deploy.sh owns the keys it
+# writes; it must not silently delete the rest, and "re-run deploy.sh" is advice
+# given often enough here that quietly eating a token is not acceptable.
+if [[ -n "$ENV_BACKUP" && -f "$ENV_BACKUP" ]]; then
+    carried=()
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
+        key=${line%%=*}
+        # These two live in docker-compose.yaml, where they win over .env.
+        # Carrying a stale copy forward leaves two contradicting answers in two
+        # files and no clue which one ran.
+        [[ "$key" == WEEKLY_EXPLORATION_FLAGS || "$key" == WEEKLY_EXPLORATION_SCHEDULE ]] && continue
+        grep -qE "^#? ?$key=" "$ENV_FILE" && continue
+        carried+=("$key")
+        printf '%s\n' "$line" >> "$ENV_FILE"
+    done < "$ENV_BACKUP"
+    if [[ ${#carried[@]} -gt 0 ]]; then
+        printf -v joined '%s, ' "${carried[@]}"
+        info "kept your other settings: ${joined%, }"
+    fi
+fi
+
 chmod 600 "$ENV_FILE"
 info "wrote .env (mode 600 — it holds your API token)"
 
@@ -248,7 +284,7 @@ $NETWORK_BLOCK
       - $ENV_FILE
     volumes:
       - $ENV_FILE:/opt/explo/.env
-      - $DOWNLOAD_PATH:/data/
+      - $DOWNLOAD_PATH:/data/Weekly-Exploration
     environment:
       - PUID=$(id -u)
       - PGID=$(id -g)
@@ -260,7 +296,7 @@ $NETWORK_BLOCK
       # It defaults to OFF and requires USE_SUBDIRECTORY=true (set in .env).
       # Do not use the older --persist=false here — in this codebase that flag
       # is parsed and then never read, so it silently does nothing at all.
-      - WEEKLY_EXPLORATION_FLAGS=--clean-downloads
+      - WEEKLY_EXPLORATION_FLAGS=--replace-playlist --clean-downloads
 EOF
 info "wrote docker-compose.yaml"
 
@@ -274,7 +310,7 @@ else
     info "no published image reachable — building locally (a few minutes the first time)"
     docker compose build || die "image build failed"
 fi
-docker compose up -d
+docker compose up -d --force-recreate
 sleep 3
 docker compose ps
 
@@ -308,7 +344,7 @@ echo
 bold "Done."
 info "Web UI:    http://localhost:7288"
 info "Logs:      docker compose -f $COMPOSE_FILE logs -f"
-info "Run now:   docker exec samo-explo sh -c 'cd /opt/explo && ./explo --clean-downloads'"
+info "Run now:   docker exec samo-explo sh -c 'cd /opt/explo && ./explo --replace-playlist --clean-downloads'"
 echo
 info "The container schedules itself from WEEKLY_EXPLORATION_SCHEDULE."
 info "Do not also add a cron entry — 'docker compose run' starts a SECOND scheduler"
