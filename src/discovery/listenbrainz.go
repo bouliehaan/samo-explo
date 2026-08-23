@@ -182,8 +182,8 @@ type MBRecording struct {
 }
 
 type TitleArgs struct {
-    CleanTitle string
-	FeatArtists    []string
+	CleanTitle  string
+	FeatArtists []string
 }
 
 type ListenBrainz struct {
@@ -198,7 +198,7 @@ func NewListenBrainz(cfg cfg.DiscoveryConfig, httpClient *util.HttpClient) *List
 	if cfg.Listenbrainz.UserToken != "" {
 		authHeader["Authorization"] = fmt.Sprintf("Token %s", cfg.Listenbrainz.UserToken)
 	}
-	
+
 	return &ListenBrainz{
 		cfg:        cfg.Listenbrainz,
 		Headers:    authHeader,
@@ -268,7 +268,16 @@ func (c *ListenBrainz) QueryTracks() ([]*models.Track, error) {
 func (c *ListenBrainz) getAPIRecommendations(user string) ([]string, error) {
 	var mbids []string
 
-	body, err := c.lbRequest(fmt.Sprintf("cf/recommendation/user/%s/recording", user))
+	// Without an explicit count ListenBrainz returns 25, which is fewer than
+	// the curated playlist this mode is supposed to improve on.
+	count := c.cfg.RecommendationCount
+	if count <= 0 {
+		count = 100
+	}
+	if count > 1000 {
+		count = 1000 // API ceiling
+	}
+	body, err := c.lbRequest(fmt.Sprintf("cf/recommendation/user/%s/recording?count=%d", user, count))
 	if err != nil {
 		return mbids, fmt.Errorf("could not get recommendations from API: %s", err.Error())
 	}
@@ -362,12 +371,12 @@ func (c *ListenBrainz) getTracks(mbids []string, singleArtist bool) ([]*models.T
 			mainArtist = recArtists[0].Name
 			if singleArtist {
 				var titleArgs TitleArgs
-                titleArgs.CleanTitle = rec.Name
+				titleArgs.CleanTitle = rec.Name
 				for _, artist := range recArtists[1:] {
 
 					titleArgs.FeatArtists = append(titleArgs.FeatArtists, artist.Name)
 				}
-                title = c.buildTrackTitle(titleArgs)
+				title = c.buildTrackTitle(titleArgs)
 				artist = mainArtist
 			}
 		}
@@ -456,7 +465,7 @@ func (c *ListenBrainz) enrichTracks(tracks []*models.Track, singleArtist bool) (
 		if len(recArtists) > 1 {
 			mainArtist = recArtists[0].Name
 			if singleArtist {
-                var titleArgs TitleArgs
+				var titleArgs TitleArgs
 				titleArgs.CleanTitle = rec.Name
 				for _, artist := range recArtists[1:] {
 					titleArgs.FeatArtists = append(titleArgs.FeatArtists, artist.Name)
@@ -645,7 +654,6 @@ func (c *ListenBrainz) getImportPlaylist(user string) (string, error) {
 	return bestID, nil
 }
 
-
 // FetchPlaylistByMBID fetches a LB playlist by MBID. For use outside the discovery flow.
 func FetchPlaylistByMBID(httpClient *util.HttpClient, mbid string) (string, []*models.Track, error) {
 	lb := &ListenBrainz{HttpClient: httpClient}
@@ -702,13 +710,13 @@ func (c *ListenBrainz) parsePlaylist(identifier string, singleArtist bool) (stri
 		if len(trackMeta.Artists) > 1 {
 			mainArtist = trackMeta.Artists[0].ArtistCreditName
 			if singleArtist {
-                var titleargs TitleArgs
+				var titleargs TitleArgs
 				titleargs.CleanTitle = track.Title
-                for _, artist := range trackArtists[1:] {
+				for _, artist := range trackArtists[1:] {
 					titleargs.FeatArtists = append(titleargs.FeatArtists, artist.ArtistCreditName)
 				}
 				title = c.buildTrackTitle(titleargs)
-                artist = trackArtists[0].ArtistCreditName
+				artist = trackArtists[0].ArtistCreditName
 			}
 		}
 

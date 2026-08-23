@@ -171,6 +171,12 @@ type Listenbrainz struct {
 	SingleArtist        bool   `env:"SINGLE_ARTIST" env-default:"true"`
 	CoverArtSize        string `env:"COVER_ART_SIZE" env-default:"250"`
 	EnrichTrackMetadata bool   `env:"ENRICH_TRACK_METADATA" env-default:"false"`
+	// How many recommendations to request when LISTENBRAINZ_DISCOVERY is not
+	// "playlist". ListenBrainz defaults to 25 if no count is sent, which is
+	// fewer than the 50 the curated Weekly Exploration playlist gives — so
+	// switching discovery modes without this made the feed SMALLER. Up to 1000
+	// is available; 100 is a sensible middle.
+	RecommendationCount int `env:"LISTENBRAINZ_RECOMMENDATION_COUNT" env-default:"100"`
 }
 
 type NotifyConfig struct {
