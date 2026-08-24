@@ -187,8 +187,9 @@ ask LB_USER "ListenBrainz username" "$PREV_LB"
 
 # One number instead of two coupled settings. 50 is not a size Explo chooses —
 # it is ListenBrainz's curated Weekly Exploration playlist, fixed. Any other
-# number switches to the raw collaborative-filtering feed, which is ranked but
-# uncurated, and where the count is ours to pick.
+# number switches to the raw feed, which is the same collaborative-filtering
+# data those playlists are built from; we apply the filter that defines
+# exploration (never listened to) ourselves and keep the top N by score.
 prev_tracks=""
 if [[ -n "$PREV_DISCOVERY" && "$PREV_DISCOVERY" != "playlist" ]]; then
     prev_tracks="${PREV_COUNT:-100}"
@@ -209,7 +210,7 @@ else
     fi
     LB_DISCOVERY="recommendations"
     LB_COUNT="$TRACK_TARGET"
-    info "using the raw recommendation feed ($TRACK_TARGET tracks — ranked, but not curated)"
+    info "using the full recommendation feed ($TRACK_TARGET unheard tracks, ranked by score)"
 fi
 # An unrecognised TZ does not error anywhere — the container's crond just
 # silently falls back to UTC, and the weekly job fires hours off from when you

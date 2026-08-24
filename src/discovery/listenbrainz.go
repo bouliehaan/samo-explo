@@ -13,15 +13,26 @@ import (
 	"explo/src/util"
 )
 
+// recommendationPoolSize is the API ceiling. Always requested in full so the
+// unheard filter below has the whole ranked pool to draw from; asking for only
+// the target size would leave the shortfall to whatever happened to be heard.
+const recommendationPoolSize = 1000
+
 type Recommendations struct {
 	Payload struct {
 		Count       int    `json:"count"`
 		Entity      string `json:"entity"`
 		LastUpdated int    `json:"last_updated"`
 		Mbids       []struct {
-			LatestListenedAt time.Time `json:"latest_listened_at"`
-			RecordingMbid    string    `json:"recording_mbid"`
-			Score            float64   `json:"score"`
+			// nil when this user has never listened to the recording. This is
+			// exactly the split ListenBrainz makes server-side to build the
+			// curated playlists: Weekly Exploration is the unheard
+			// recommendations, Weekly Jams the heard ones. A pointer because a
+			// JSON null would otherwise unmarshal to the zero time and be
+			// indistinguishable from a real timestamp we failed to parse.
+			LatestListenedAt *time.Time `json:"latest_listened_at"`
+			RecordingMbid    string     `json:"recording_mbid"`
+			Score            float64    `json:"score"`
 		} `json:"mbids"`
 		TotalMbidCount int    `json:"total_mbid_count"`
 		UserName       string `json:"user_name"`
@@ -268,16 +279,12 @@ func (c *ListenBrainz) QueryTracks() ([]*models.Track, error) {
 func (c *ListenBrainz) getAPIRecommendations(user string) ([]string, error) {
 	var mbids []string
 
-	// Without an explicit count ListenBrainz returns 25, which is fewer than
-	// the curated playlist this mode is supposed to improve on.
-	count := c.cfg.RecommendationCount
-	if count <= 0 {
-		count = 100
-	}
-	if count > 1000 {
-		count = 1000 // API ceiling
-	}
-	body, err := c.lbRequest(fmt.Sprintf("cf/recommendation/user/%s/recording?count=%d", user, count))
+	// Ask for everything and curate here rather than taking the API's default
+	// of 25. The raw feed is the same collaborative-filtering data the curated
+	// playlists are built from — it is simply unfiltered — so with the whole
+	// pool in hand we can apply the one filter that defines "exploration" and
+	// still honour the requested size.
+	body, err := c.lbRequest(fmt.Sprintf("cf/recommendation/user/%s/recording?count=%d", user, recommendationPoolSize))
 	if err != nil {
 		return mbids, fmt.Errorf("could not get recommendations from API: %s", err.Error())
 	}
@@ -288,12 +295,32 @@ func (c *ListenBrainz) getAPIRecommendations(user string) ([]string, error) {
 		return mbids, fmt.Errorf("could not get recommendations from API: %s", err.Error())
 	}
 
+	// Keep only what this user has never listened to, which is what makes a
+	// recommendation exploration rather than a reminder. Results arrive ranked
+	// by score, so taking the first N preserves that ranking — the same shape
+	// as the curated playlist, just not capped at 50.
+	want := c.cfg.RecommendationCount
+	if want <= 0 {
+		want = 100
+	}
+	heard := 0
 	for _, rec := range reccs.Payload.Mbids {
+		if rec.LatestListenedAt != nil {
+			heard++
+			continue
+		}
 		mbids = append(mbids, rec.RecordingMbid)
+		if len(mbids) >= want {
+			break
+		}
 	}
 
 	if len(mbids) == 0 {
-		return mbids, fmt.Errorf("no recommendations found, exiting")
+		return mbids, fmt.Errorf("no unheard recommendations found, exiting")
+	}
+	if len(mbids) < want {
+		slog.Info("fewer unheard recommendations than requested",
+			"wanted", want, "got", len(mbids), "alreadyHeard", heard)
 	}
 	return mbids, nil
 }
