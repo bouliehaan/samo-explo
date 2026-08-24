@@ -56,11 +56,14 @@ docker info >/dev/null 2>&1 || die "cannot talk to the docker daemon (try: sudo 
 # already set, and a re-run is usually someone fixing an answer they regret.
 PREV_URL=""; PREV_LB=""; PREV_TZ=""; PREV_SCHEDULE=""; PREV_PATH=""
 PREV_DL=""; PREV_SLSKD_URL=""; PREV_SLSKD_KEY=""
+PREV_DISCOVERY=""; PREV_COUNT=""
 if [[ -f "$ENV_FILE" ]]; then
     PREV_URL=$(grep -E '^SYSTEM_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
     # .env holds the URL as the CONTAINER sees it; offer it back in host terms.
     PREV_URL=${PREV_URL//host.docker.internal/localhost}
     PREV_LB=$(grep -E '^LISTENBRAINZ_USER=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+    PREV_DISCOVERY=$(grep -E '^LISTENBRAINZ_DISCOVERY=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+    PREV_COUNT=$(grep -E '^LISTENBRAINZ_RECOMMENDATION_COUNT=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
     PREV_DL=$(grep -E '^DOWNLOAD_SERVICES=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
     PREV_SLSKD_URL=$(grep -E '^SLSKD_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
     PREV_SLSKD_KEY=$(grep -E '^SLSKD_API_KEY=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
@@ -181,6 +184,33 @@ mkdir -p "$DOWNLOAD_PATH" || die "cannot create $DOWNLOAD_PATH"
 echo
 bold "3. ListenBrainz"
 ask LB_USER "ListenBrainz username" "$PREV_LB"
+
+# One number instead of two coupled settings. 50 is not a size Explo chooses —
+# it is ListenBrainz's curated Weekly Exploration playlist, fixed. Any other
+# number switches to the raw collaborative-filtering feed, which is ranked but
+# uncurated, and where the count is ours to pick.
+prev_tracks=""
+if [[ -n "$PREV_DISCOVERY" && "$PREV_DISCOVERY" != "playlist" ]]; then
+    prev_tracks="${PREV_COUNT:-100}"
+fi
+ask TRACK_TARGET "Tracks per week (50 = ListenBrainz's curated weekly playlist)" "${prev_tracks:-50}"
+
+if [[ ! "$TRACK_TARGET" =~ ^[0-9]+$ ]]; then
+    die "tracks per week must be a number"
+fi
+if [[ "$TRACK_TARGET" -eq 50 ]]; then
+    LB_DISCOVERY="playlist"
+    LB_COUNT=""
+    info "using the curated Weekly Exploration playlist (50 tracks)"
+else
+    if [[ "$TRACK_TARGET" -gt 1000 ]]; then
+        warn "ListenBrainz caps this at 1000 — using 1000"
+        TRACK_TARGET=1000
+    fi
+    LB_DISCOVERY="recommendations"
+    LB_COUNT="$TRACK_TARGET"
+    info "using the raw recommendation feed ($TRACK_TARGET tracks — ranked, but not curated)"
+fi
 # An unrecognised TZ does not error anywhere — the container's crond just
 # silently falls back to UTC, and the weekly job fires hours off from when you
 # meant it to. Names are the full zoneinfo form ("America/Denver"), never an
@@ -267,7 +297,8 @@ cat > "$ENV_FILE" <<EOF
 # --- Discovery ---
 DISCOVERY_SERVICE=listenbrainz
 LISTENBRAINZ_USER=$LB_USER
-LISTENBRAINZ_DISCOVERY=playlist
+LISTENBRAINZ_DISCOVERY=$LB_DISCOVERY
+${LB_COUNT:+LISTENBRAINZ_RECOMMENDATION_COUNT=$LB_COUNT}
 
 # --- Music system ---
 EXPLO_SYSTEM=samo
