@@ -106,20 +106,14 @@ type DownloadConfig struct {
 	// near-simultaneous connections. A commercial VPN reads that as abuse and
 	// cuts the session — which presents as a dead tunnel, not as a rate limit,
 	// and costs an evening to trace. Raise these only on a direct connection.
-	DownloadConcurrency int  `env:"DOWNLOAD_CONCURRENCY" env-default:"1"`
-	DownloadDelay       int  `env:"DOWNLOAD_DELAY" env-default:"5"`         // seconds between tracks
-	OverwriteMetadata   bool `env:"OVERWRITE_METADATA" env-default:"false"` // overwrite metadata when migrating downloads
-	KeepPermissions     bool `env:"KEEP_PERMISSIONS" env-default:"true"`    // keep original file permissions when migrating download
-	RenameTrack         bool `env:"RENAME_TRACK" env-default:"false"`       // Rename track in {title}-{artist} format
-	UseSubDir           bool `env:"USE_SUBDIRECTORY" env-default:"true"`
-	// How long a drop survives before rotation removes it. These files come off
-	// other people's machines; deleting one that is still recommended only to
-	// re-fetch it next run wastes a stranger's bandwidth and disk. Three weeks
-	// keeps the queue bounded while letting a repeat recommendation be found in
-	// place and skipped. 0 restores the old delete-everything behaviour.
-	RetentionDays int      `env:"CLEAN_OLDER_THAN_DAYS" env-default:"21"`
-	Discovery     string   `env:"LISTENBRAINZ_DISCOVERY" env-default:"playlist"`
-	Services      []string `env:"DOWNLOAD_SERVICES" env-default:"youtube"`
+	DownloadConcurrency int      `env:"DOWNLOAD_CONCURRENCY" env-default:"1"`
+	DownloadDelay       int      `env:"DOWNLOAD_DELAY" env-default:"5"`         // seconds between tracks
+	OverwriteMetadata   bool     `env:"OVERWRITE_METADATA" env-default:"false"` // overwrite metadata when migrating downloads
+	KeepPermissions     bool     `env:"KEEP_PERMISSIONS" env-default:"true"`    // keep original file permissions when migrating download
+	RenameTrack         bool     `env:"RENAME_TRACK" env-default:"false"`       // Rename track in {title}-{artist} format
+	UseSubDir           bool     `env:"USE_SUBDIRECTORY" env-default:"true"`
+	Discovery           string   `env:"LISTENBRAINZ_DISCOVERY" env-default:"playlist"`
+	Services            []string `env:"DOWNLOAD_SERVICES" env-default:"youtube"`
 }
 
 type Filters struct {

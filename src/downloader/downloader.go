@@ -141,56 +141,19 @@ func (c *DownloadClient) needsDownloadDir() bool {
 	return c.Cfg.Slskd.MigrateDL
 }
 
-// DeleteSongs rotates the drop folder.
-//
-// Age-based rather than a blind wipe, because every file here came off another
-// person's machine over Soulseek. Deleting a track that is still recommended
-// only to fetch it again next run costs a stranger their bandwidth and their
-// disk for nothing — and the ordering makes that the default outcome, since
-// this runs BEFORE the check that would have recognised the file as already
-// present.
-//
-// Keeping a few weeks means a still-recommended track is simply found in place
-// and skipped. RetentionDays of 0 restores the old delete-everything behaviour.
 func (c *DownloadClient) DeleteSongs() {
 	entries, err := os.ReadDir(c.Cfg.DownloadDir)
 	if err != nil {
 		slog.Error("failed to read directory", "context", err.Error())
-		return
 	}
-
-	cutoff := time.Time{}
-	if c.Cfg.RetentionDays > 0 {
-		cutoff = time.Now().AddDate(0, 0, -c.Cfg.RetentionDays)
-	}
-
-	removed, kept := 0, 0
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		if !cutoff.IsZero() {
-			info, statErr := entry.Info()
-			if statErr != nil {
-				slog.Warn("could not stat file, leaving it alone", "file", entry.Name())
-				kept++
-				continue
-			}
-			if info.ModTime().After(cutoff) {
-				kept++
-				continue
-			}
-		}
-		if err := os.Remove(path.Join(c.Cfg.DownloadDir, entry.Name())); err != nil {
-			slog.Error("failed to remove file", "context", err.Error())
-			continue
-		}
-		removed++
-	}
+		if !(entry.IsDir()) {
+			err = os.Remove(path.Join(c.Cfg.DownloadDir, entry.Name()))
 
-	if c.Cfg.RetentionDays > 0 {
-		slog.Info("rotated the drop folder",
-			"removed", removed, "kept", kept, "retentionDays", c.Cfg.RetentionDays)
+			if err != nil {
+				slog.Error("failed to remove file", "context", err.Error())
+			}
+		}
 	}
 }
 
