@@ -68,6 +68,30 @@ type APIClient interface {
 	DeletePlaylist() error
 }
 
+// DropFolderPruner is an optional capability for systems that stage downloads
+// in a folder the run is expected to keep in sync.
+//
+// Relevance is the criterion, not age: a track still on this week's list stays
+// (so it is found in place instead of being fetched again), and a track that
+// has dropped off the list goes. Blanket deletion combined with the fact that
+// cleanup runs before the local check means every still-recommended track gets
+// re-downloaded every run — which, on Soulseek, spends a stranger's upload and
+// their disk to replace a file we deleted ourselves.
+type DropFolderPruner interface {
+	// PruneDropFolder removes staged files whose tracks are absent from wanted,
+	// returning how many it deleted.
+	PruneDropFolder(downloadDir string, wanted []*models.Track) (int, error)
+}
+
+// DropFolderPruner reports whether this system stages its own downloads and
+// can prune them by relevance. A method rather than a bare type assertion at
+// the call site, because main.go names its client value `client`, shadowing
+// this package.
+func (c *Client) DropFolderPruner() (DropFolderPruner, bool) {
+	pruner, ok := c.API.(DropFolderPruner)
+	return pruner, ok
+}
+
 // ArtworkUploader is an optional capability for clients that support setting
 // playlist artwork. Use a type assertion: if u, ok := c.API.(client.ArtworkUploader); ok {...}.
 type ArtworkUploader interface {

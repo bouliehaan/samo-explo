@@ -76,10 +76,17 @@ never exits, ignores any CLI flags you pass it (`start.sh` does not read `$@`),
 and vanishes the next time the Docker daemon restarts. Set the schedule in
 `docker-compose.yaml` and let the container do it.
 
-**`--clean-downloads` is what rotates the folder, and it defaults to off.** It
-deletes last week's drop before fetching this week's, which is what keeps samo's
-Explore playlist a "this week" queue rather than an ever-growing pile. It also
-requires `USE_SUBDIRECTORY=true`.
+**`--clean-downloads` rotates the drop folder, and it defaults to off.** With
+the samo client it is a reconcile, not a wipe: this week's list is resolved
+first, anything still recommended keeps its file, and only drops that have
+fallen off the list are deleted. So a track recommended two weeks running is
+found in place and never fetched twice.
+
+That ordering is deliberate. Cleaning before the local check — which is what
+upstream does — destroys the evidence the check needs, so every still-relevant
+track gets re-downloaded every run. On Soulseek that means taking a file off
+another person's machine to replace one you deleted yourself, week after week.
+It also requires `USE_SUBDIRECTORY=true`.
 
 Older guides say `--persist=false` does this. It used to. In this codebase that
 flag is parsed and then **never read** — it prints a deprecation warning and

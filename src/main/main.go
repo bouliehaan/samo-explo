@@ -206,12 +206,30 @@ func main() {
 			slog.Warn(err.Error(), "notify", true)
 		}
 	}
-	if cfg.Flags.CleanDownloads && cfg.DownloadCfg.UseSubDir {
-		downloader.DeleteSongs()
-	}
 	if cfg.Flags.DownloadMode != "force" {
 		if err := client.CheckTracks(tracks); err != nil { // Check if tracks exist on system before downloading
 			slog.Warn(err.Error(), "notify", true)
+		}
+	}
+
+	// Cleanup runs AFTER the check, never before. Deleting the staging folder
+	// first destroys the evidence the check needs, so every track still on the
+	// list is re-downloaded — on Soulseek that means taking a file off another
+	// person's machine to replace one we just deleted ourselves.
+	//
+	// A client that stages its own downloads prunes by relevance: what is still
+	// recommended stays, what has fallen off the list goes. Anything else keeps
+	// the blanket delete, which is at least now correctly ordered.
+	if cfg.Flags.CleanDownloads {
+		if pruner, ok := client.DropFolderPruner(); ok {
+			removed, err := pruner.PruneDropFolder(cfg.DownloadCfg.DownloadDir, tracks)
+			if err != nil {
+				slog.Warn("could not prune the drop folder", "err", err.Error())
+			} else {
+				slog.Info("pruned drops that are no longer recommended", "removed", removed)
+			}
+		} else if cfg.DownloadCfg.UseSubDir {
+			downloader.DeleteSongs()
 		}
 	}
 

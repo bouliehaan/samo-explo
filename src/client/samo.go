@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -557,4 +559,74 @@ func (c *Samo) DeletePlaylist() error {
 	}
 	c.playlistID = ""
 	return nil
+}
+
+// PruneDropFolder removes staged files whose tracks are no longer recommended.
+//
+// Called after the local check has run, so `wanted` is this week's full list
+// with the drop-folder matches already marked. Everything in the ledger that
+// nothing in that list matched has fallen off the recommendations, and only
+// those files are deleted. A track still being recommended keeps its file, and
+// the next run finds it in place rather than pulling it off a stranger's
+// machine a second time.
+func (c *Samo) PruneDropFolder(downloadDir string, wanted []*models.Track) (int, error) {
+	ledger := c.exploLedger()
+	if len(ledger) == 0 {
+		return 0, nil
+	}
+
+	// Every ledger row that any wanted track resolves to. matchExploLedger is
+	// the same comparison used to skip downloads, so a track cannot be counted
+	// as present for one purpose and stale for the other.
+	keep := make(map[string]bool, len(wanted))
+	for _, track := range wanted {
+		probe := &models.Track{
+			CleanTitle: track.CleanTitle,
+			MainArtist: track.MainArtist,
+		}
+		if c.matchExploLedger(probe, ledger) {
+			keep[probe.ID] = true
+		}
+	}
+
+	removed := 0
+	for _, row := range ledger {
+		if row.TrackID == "" || keep[row.TrackID] {
+			continue
+		}
+		for _, name := range c.trackFileNames(row.TrackID) {
+			path := filepath.Join(downloadDir, name)
+			if _, err := os.Stat(path); err != nil {
+				continue // not staged here (already kept, or another folder)
+			}
+			if err := os.Remove(path); err != nil {
+				slog.Warn("[samo] could not remove a stale drop", "file", name, "err", err.Error())
+				continue
+			}
+			slog.Info("[samo] removed a drop that is no longer recommended", "file", name)
+			removed++
+		}
+	}
+	return removed, nil
+}
+
+// trackFileNames resolves a track id to the base names of its audio files. Base
+// names because the server reports its own absolute paths, which are not where
+// this container sees the same folder.
+func (c *Samo) trackFileNames(trackID string) []string {
+	body, err := c.request("GET", "/music/tracks/"+url.PathEscape(trackID), nil)
+	if err != nil {
+		return nil
+	}
+	var track samoTrack
+	if err := util.ParseResp(body, &track); err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(track.AudioFiles))
+	for _, file := range track.AudioFiles {
+		if file.Path != "" {
+			names = append(names, filepath.Base(file.Path))
+		}
+	}
+	return names
 }
