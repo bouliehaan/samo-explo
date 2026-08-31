@@ -58,6 +58,18 @@ if [ -n "$CRON_SCHEDULE" ]; then
     crond -f -l 2
 fi
 
+# /etc/crontabs/root lives in the container's writable layer, so it survives a
+# restart — and the loop below appends to it. Without clearing our own entries
+# first, every restart registers the jobs again: `restart: unless-stopped` plus a
+# few reboots is enough to stack four identical schedules, which then fire four
+# concurrent runs on the same minute, racing each other over the same downloads,
+# the same drop folder and the same apk lock. Drop only the lines we generate;
+# the base image's own periodic entries have to stay.
+if [ -f /etc/crontabs/root ]; then
+  grep -v "cd /opt/explo && " /etc/crontabs/root > /etc/crontabs/root.new
+  mv /etc/crontabs/root.new /etc/crontabs/root
+fi
+
 # Loop over all *_SCHEDULE environment variables
 for var in $(env | grep "_SCHEDULE=" | cut -d= -f1); do
   job="${var%_SCHEDULE}"                     # Job name (e.g WEEKLY_EXPLORATION)

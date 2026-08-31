@@ -366,21 +366,61 @@ func (c *ListenBrainz) LookupRecording(mbid string) (*models.Track, error) {
 	}
 	return tracks[0], nil
 }
-func (c *ListenBrainz) getTracks(mbids []string, singleArtist bool) ([]*models.Track, error) {
-	strMbids := strings.Join(mbids, ",")
 
-	body, err := c.lbRequest(fmt.Sprintf("metadata/recording/?recording_mbids=%s&inc=release+artist", strMbids))
+// ListenBrainz serves metadata/recording/ behind a proxy with a ~4KB
+// request-line limit, and it answers an over-long URL with a 502 rather than a
+// 414 — so this reads as an outage, not as a request we built wrong. Each MBID
+// costs 37 bytes with its separator, which puts the ceiling a little over 100
+// IDs. LISTENBRAINZ_RECOMMENDATION_COUNT routinely exceeds that, and one
+// oversized URL fails the entire weekly run. Batch well under the limit.
+const mbidBatchSize = 50
+
+// batchMbids splits mbids into consecutive batches of at most size.
+func batchMbids(mbids []string, size int) [][]string {
+	if size < 1 {
+		size = 1
+	}
+
+	batches := make([][]string, 0, (len(mbids)+size-1)/size)
+	for start := 0; start < len(mbids); start += size {
+		batches = append(batches, mbids[start:min(start+size, len(mbids))])
+	}
+
+	return batches
+}
+
+// fetchRecordings looks up every MBID against metadata/recording/, one batch
+// per request, and merges the responses into a single map.
+func (c *ListenBrainz) fetchRecordings(mbids []string, inc string) (Recordings, error) {
+	all := make(Recordings, len(mbids))
+
+	for _, batch := range batchMbids(mbids, mbidBatchSize) {
+		body, err := c.lbRequest(fmt.Sprintf("metadata/recording/?recording_mbids=%s&inc=%s", strings.Join(batch, ","), inc))
+		if err != nil {
+			return nil, err
+		}
+
+		var recordings Recordings
+		if err := util.ParseResp(body, &recordings); err != nil {
+			return nil, err
+		}
+
+		for mbid, recording := range recordings {
+			all[mbid] = recording
+		}
+	}
+
+	return all, nil
+}
+
+func (c *ListenBrainz) getTracks(mbids []string, singleArtist bool) ([]*models.Track, error) {
+	recordings, err := c.fetchRecordings(mbids, "release+artist")
 	if err != nil {
 		return nil, fmt.Errorf("getTracks(): %s", err.Error())
 	}
 
-	var recordings Recordings
-	if err := util.ParseResp(body, &recordings); err != nil {
-		return nil, fmt.Errorf("getTracks(): %s", err.Error())
-	}
-
 	if len(recordings) == 0 {
-		return nil, fmt.Errorf("no recordings found for MBIDs: %s", strMbids)
+		return nil, fmt.Errorf("no recordings found for MBIDs: %s", strings.Join(mbids, ","))
 	}
 
 	tracks := make([]*models.Track, 0, len(recordings))
@@ -439,20 +479,13 @@ func (c *ListenBrainz) enrichTracks(tracks []*models.Track, singleArtist bool) (
 			mbids = append(mbids, track.MusicBrainzTrackID)
 		}
 	}
-	strMbids := strings.Join(mbids, ",")
-
-	body, err := c.lbRequest(fmt.Sprintf("metadata/recording/?recording_mbids=%s&inc=release+artist+tag+release_group+recording", strMbids))
+	recordings, err := c.fetchRecordings(mbids, "release+artist+tag+release_group+recording")
 	if err != nil {
-		return nil, fmt.Errorf("getTracks(): %s", err.Error())
-	}
-
-	var recordings Recordings
-	if err := util.ParseResp(body, &recordings); err != nil {
-		return nil, fmt.Errorf("getTracks(): %s", err.Error())
+		return nil, fmt.Errorf("enrichTracks(): %s", err.Error())
 	}
 
 	if len(recordings) == 0 {
-		return nil, fmt.Errorf("no recordings found for MBIDs: %s", strMbids)
+		return nil, fmt.Errorf("no recordings found for MBIDs: %s", strings.Join(mbids, ","))
 	}
 
 	for i, track := range tracks {
