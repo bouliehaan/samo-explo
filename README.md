@@ -13,25 +13,31 @@ run samo, use [upstream](https://github.com/LumePart/Explo) instead.
 ```bash
 git clone https://github.com/bouliehaan/samo-explo.git
 cd samo-explo
-./deploy.sh
+cp .env.example .env
 ```
 
-`deploy.sh` asks for your samo URL and login, mints a dedicated API token,
-writes `.env` and `docker-compose.yaml`, pulls
-[`ghcr.io/bouliehaan/samo-explo:latest`](https://github.com/bouliehaan/samo-explo/pkgs/container/samo-explo)
-and starts it. Re-running is safe and is how you update — it reuses the token it
-already made.
+Three things to fill in:
 
-It also asks which downloader you want, and configures
-[slskd](https://github.com/slskd/slskd) for you if you pick Soulseek. Take that
-option — see [Downloads](#downloads-youtube-will-block-you).
+| | |
+|---|---|
+| `SYSTEM_URL` in `.env` | Your samo server, e.g. `http://192.168.1.10:6969` |
+| `API_KEY` in `.env` | A samo **admin** bearer token — Settings → API tokens. A non-admin one downloads and builds playlists fine, but cannot trigger a scan or read explo status, so it waits out `SLEEP` instead and reports less. |
+| the drop-folder volume in `docker-compose.yaml` | The host path samo's explo folder points at, mounted to `/data/Weekly-Exploration` |
 
-Wiring it by hand instead: [docker-compose.example.yaml](docker-compose.example.yaml).
-The web UI is on `http://<host>:7288`, with a run button and a log view.
+Then:
 
-Use an **admin** token. A non-admin one downloads and builds playlists fine, but
-cannot trigger a scan or read explo status, so it waits out `SLEEP` instead and
-reports less.
+```bash
+docker compose pull
+docker compose up -d
+```
+
+That runs [`ghcr.io/bouliehaan/samo-explo:latest`](https://github.com/bouliehaan/samo-explo/pkgs/container/samo-explo).
+The web UI is on `http://<host>:7288` with a run button and a log view; the
+schedule in `docker-compose.yaml` is what actually drives it.
+
+Pick **slskd** as your downloader — see [Downloads](#downloads-youtube-will-block-you)
+for why, and for the one slskd setting that will look like a wrong API key when
+it isn't.
 
 ## The two modes
 
@@ -46,7 +52,7 @@ while samo rewrites the real one. Downloading is the whole integration.
 samo playlist. No fingerprinting, no cover art, and the drops show up in
 Recently Added like any other import.
 
-`deploy.sh` detects which one you are in and tells you.
+samo-explo detects which one it is in and says so in the log on every run.
 
 ## Downloads: YouTube will block you
 
@@ -54,20 +60,20 @@ YouTube answers most server IPs with *"Sign in to confirm you're not a bot"*,
 and every download in the run fails with it. Nothing in samo or samo-explo can
 work around that. Two ways out:
 
-**Soulseek — the recommended route.** `deploy.sh` configures slskd for you: it
-verifies the API key, reads slskd's own download directory out of its API, works
-out which host directory is mounted there, and mounts that into the container.
-No bot checks, no cookies to keep fresh, better audio than a YouTube rip.
+**Soulseek — the recommended route.** Set `DOWNLOAD_SERVICES=slskd`, point
+`SLSKD_URL` and `SLSKD_API_KEY` at your [slskd](https://github.com/slskd/slskd),
+and mount slskd's own download directory into the container at `/slskd/` so
+finished files can be moved into the drop folder. No bot checks, no cookies to
+keep fresh, better audio than a YouTube rip.
 
-One trap it handles for you: slskd API keys carry a `cidr:` restriction, and the
-usual `192.168.x.0/24` does **not** contain `127.0.0.1`. With host networking a
-request to `localhost:5030` arrives from loopback and is refused with a flat
-`401` that looks exactly like a wrong key. Use a LAN address, which is what the
-default offers.
+One trap: slskd API keys carry a `cidr:` restriction, and the usual
+`192.168.x.0/24` does **not** contain `127.0.0.1`. A request to `localhost:5030`
+arrives from loopback and is refused with a flat `401` that looks exactly like a
+wrong key. Use a LAN address.
 
 **A cookies file.** yt-dlp's own remedy. Export your YouTube cookies in Netscape
-format, drop the file at `cookies.txt` next to `deploy.sh`, and re-run — it gets
-mounted for you. Worth using a throwaway Google account: this is bulk automated
+format, drop the file at `cookies.txt` and uncomment its line in
+`docker-compose.yaml`. Worth using a throwaway Google account: this is bulk automated
 fetching, and accounts do get flagged for it.
 
 A run that downloads nothing is not silent — samo-explo reports `inFolder=0` and
@@ -81,7 +87,7 @@ Beyond the upstream variables, the samo client uses:
 | --- | --- |
 | `EXPLO_SYSTEM=samo` | Selects this client |
 | `SYSTEM_URL` | Your samo server, e.g. `http://192.168.1.10:6969` |
-| `API_KEY` | A samo bearer token — Settings → API tokens |
+| `API_KEY` | A samo admin bearer token — Settings → API tokens |
 | `LIBRARY_NAME` | Optional; picks a specific library when you have several |
 
 Everything else is upstream's, documented in its wiki:

@@ -1,8 +1,5 @@
-# Reference compose for the samo fork of Explo.
-#
-# `./deploy.sh` writes a real docker-compose.yaml from your answers and is the
-# supported path — it mints the samo token, works out the paths, and configures
-# slskd. This file is here for anyone who would rather wire it by hand.
+# samo-explo. Copy .env.example to .env, edit it, fix the drop-folder path
+# below, then `docker compose up -d`.
 
 services:
   explo:
@@ -22,6 +19,7 @@ services:
       # - /path/to/slskd/downloads:/slskd/     # if using slskd
       # - ./cookies.txt:/opt/explo/cookies.txt # optional, for yt-dlp
     environment:
+      # The owner of your music folder, so dropped files are not root-owned.
       - PUID=1000
       - PGID=1000
       - TZ=UTC                # must match the timezone set in ListenBrainz

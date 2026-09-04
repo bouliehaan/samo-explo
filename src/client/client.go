@@ -182,7 +182,7 @@ func (c *Client) systemSetup() error {
 			return fmt.Errorf("samo SYSTEM_URL is required")
 		}
 		if c.Cfg.Creds.APIKey == "" {
-			return fmt.Errorf("samo API_KEY is required (Settings -> API tokens, or run deploy.sh)")
+			return fmt.Errorf("samo API_KEY is required (Settings -> API tokens)")
 		}
 		if err := c.API.AddHeader(); err != nil {
 			return err

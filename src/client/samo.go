@@ -23,7 +23,7 @@ import (
 // fine, downloads fine, and then fails on the last step of every run. The
 // native API has all three.
 //
-// Auth is a bearer token (Settings -> API tokens, or `deploy.sh`, which mints
+// Auth is a bearer token (Settings -> API tokens, which mints
 // one for you). Scans and the explo endpoints require an ADMIN token; a
 // non-admin token still downloads and builds playlists, it just cannot ask the
 // server to rescan, so it falls back to the SLEEP wait like other clients.
