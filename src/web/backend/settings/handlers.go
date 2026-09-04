@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"explo/src/discover"
 	"explo/src/util"
 	"explo/src/web"
 	"explo/src/web/backend/defs"
@@ -43,9 +45,41 @@ func (s *Settings) HandleGetConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Nobody has said which samo-server to use yet, so ask the LAN rather than
+	// making them find the address themselves. The wizard initialises its
+	// Server URL field from this, so a discovered server arrives already filled
+	// in. Marked "discovered" rather than "file" or "env" so the UI can tell
+	// the difference between an answer and a guess.
+	if values["SYSTEM_URL"] == "" && isSamoSystem(values["EXPLO_SYSTEM"]) {
+		ctx, cancel := context.WithTimeout(r.Context(), discoveryTimeout)
+		defer cancel()
+		if server, err := discover.Find(ctx, discoveryTimeout); err == nil {
+			values["SYSTEM_URL"] = server.Address
+			sources["SYSTEM_URL"] = "discovered"
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(ConfigResponse{Values: values, Sources: sources}); err != nil {
 		slog.Error("failed encoding config to http", "msg", err.Error())
+	}
+}
+
+// discoveryTimeout bounds the LAN probe. The wizard is waiting on this response,
+// so it has to be short enough not to feel like a hang; a samo-server on the
+// same network answers in well under a tenth of this.
+const discoveryTimeout = 2 * time.Second
+
+// isSamoSystem reports whether discovery is worth attempting. An empty value is
+// a fresh install that has not chosen yet, and samo is the default it will get.
+// Probing for a samo-server while somebody is configuring Jellyfin would be
+// noise at best and a wrong answer at worst.
+func isSamoSystem(system string) bool {
+	switch strings.ToLower(strings.TrimSpace(system)) {
+	case "", "samo":
+		return true
+	default:
+		return false
 	}
 }
 

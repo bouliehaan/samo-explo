@@ -1,0 +1,48 @@
+# samo-explo. One command, nothing to edit:
+#
+#   docker compose -f oci://ghcr.io/bouliehaan/samo-explo:compose up -d
+#
+# Then open http://<this machine>:7288 and the wizard takes it from there. It
+# finds your samo-server on the LAN by itself, mints its own API token from your
+# samo login, and configures the downloader.
+#
+# Point SAMO_EXPLO_DIR at samo's explo folder if it is not the default; compose
+# reads it from your shell, so there is still no file to edit.
+
+services:
+  explo:
+    image: ghcr.io/bouliehaan/samo-explo:latest
+    container_name: samo-explo
+    restart: unless-stopped
+    # Host networking, so the wizard can broadcast for samo-server. A container
+    # on Docker's default bridge cannot send one — the same constraint that
+    # makes samo-server itself run this way. It also means the web UI is on
+    # :7288 of this host directly.
+    network_mode: host
+    volumes:
+      # The drop folder, which must be the path samo's explo folder points at.
+      - ${SAMO_EXPLO_DIR:-/mnt/media/explo}:/data/Weekly-Exploration
+      # Everything the wizard writes: the samo token, the schedule, the
+      # downloader settings. A named volume, so nothing here needs a host path.
+      - explodata:/opt/explo
+    environment:
+      - EXPLO_SYSTEM=samo
+      - WEB_UI=true
+      # The owner of your music folder, so dropped files are not root-owned.
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Must match the timezone set in ListenBrainz.
+      - TZ=${TZ:-UTC}
+      # Set these to put a login on the web UI. Left empty the UI is open to
+      # anything that can reach :7288, and it logs a warning saying so.
+      - UI_USERNAME=${UI_USERNAME:-}
+      - UI_PASSWORD=${UI_PASSWORD:-}
+      # DOWNLOAD_DIR is a path INSIDE the container. USE_SUBDIRECTORY makes
+      # Explo append the playlist name, so /data/ + Weekly-Exploration lands
+      # exactly on the mount above. USE_SUBDIRECTORY must stay true:
+      # --clean-downloads is gated on it, and that is what rotates the folder.
+      - DOWNLOAD_DIR=/data/
+      - USE_SUBDIRECTORY=true
+
+volumes:
+  explodata:

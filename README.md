@@ -11,33 +11,31 @@ run samo, use [upstream](https://github.com/LumePart/Explo) instead.
 ## Install
 
 ```bash
-git clone https://github.com/bouliehaan/samo-explo.git
-cd samo-explo
-cp .env.example .env
+docker compose -f oci://ghcr.io/bouliehaan/samo-explo:compose up -d
 ```
 
-Three things to fill in:
+Then open `http://<this machine>:7288`. The wizard finds your samo-server on the
+LAN by itself, takes your samo login once to mint its own API token, and asks
+which downloader you want. Nothing to edit, no token to go and fetch.
 
-| | |
-|---|---|
-| `SYSTEM_URL` in `.env` | Your samo server, e.g. `http://192.168.1.10:6969` |
-| `API_KEY` in `.env` | A samo **admin** bearer token — Settings → API tokens. A non-admin one downloads and builds playlists fine, but cannot trigger a scan or read explo status, so it waits out `SLEEP` instead and reports less. |
-| the drop-folder volume in `docker-compose.yaml` | The host path samo's explo folder points at, mounted to `/data/Weekly-Exploration` |
-
-Then:
+If samo's explo folder is not at `/mnt/media/explo`, say so on the same line;
+compose reads it from your shell, so there is still no file:
 
 ```bash
-docker compose pull
-docker compose up -d
+SAMO_EXPLO_DIR=/srv/music/explo docker compose -f oci://ghcr.io/bouliehaan/samo-explo:compose up -d
 ```
 
-That runs [`ghcr.io/bouliehaan/samo-explo:latest`](https://github.com/bouliehaan/samo-explo/pkgs/container/samo-explo).
-The web UI is on `http://<host>:7288` with a run button and a log view; the
-schedule in `docker-compose.yaml` is what actually drives it.
+`UI_USERNAME` and `UI_PASSWORD` are passed through the same way, and are worth
+setting — without them the web UI is open to anything that can reach `:7288`,
+and it logs a warning saying so.
 
-Pick **slskd** as your downloader — see [Downloads](#downloads-youtube-will-block-you)
-for why, and for the one slskd setting that will look like a wrong API key when
-it isn't.
+Pick **slskd** as the downloader when the wizard asks — see
+[Downloads](#downloads-youtube-will-block-you) for why, and for the one slskd
+setting that will look like a wrong API key when it is not.
+
+Use an **admin** samo login. A non-admin token downloads and builds playlists
+fine, but cannot trigger a scan or read explo status, so it waits out `SLEEP`
+instead and reports less.
 
 ## The two modes
 
@@ -60,10 +58,10 @@ YouTube answers most server IPs with *"Sign in to confirm you're not a bot"*,
 and every download in the run fails with it. Nothing in samo or samo-explo can
 work around that. Two ways out:
 
-**Soulseek — the recommended route.** Set `DOWNLOAD_SERVICES=slskd`, point
-`SLSKD_URL` and `SLSKD_API_KEY` at your [slskd](https://github.com/slskd/slskd),
-and mount slskd's own download directory into the container at `/slskd/` so
-finished files can be moved into the drop folder. No bot checks, no cookies to
+**Soulseek — the recommended route.** Pick it in the wizard and give it your
+[slskd](https://github.com/slskd/slskd) URL and API key, then mount slskd's own
+download directory into the container at `/slskd/` so finished files can be
+moved into the drop folder. No bot checks, no cookies to
 keep fresh, better audio than a YouTube rip.
 
 One trap: slskd API keys carry a `cidr:` restriction, and the usual
@@ -86,7 +84,7 @@ Beyond the upstream variables, the samo client uses:
 | Variable | Meaning |
 | --- | --- |
 | `EXPLO_SYSTEM=samo` | Selects this client |
-| `SYSTEM_URL` | Your samo server, e.g. `http://192.168.1.10:6969` |
+| `SYSTEM_URL` | Your samo server. Found by LAN broadcast when unset, so the wizard opens with it already filled in |
 | `API_KEY` | A samo admin bearer token — Settings → API tokens |
 | `LIBRARY_NAME` | Optional; picks a specific library when you have several |
 
