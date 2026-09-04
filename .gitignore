@@ -11,3 +11,4 @@ src/web/frontend/node_modules/
 /data/
 /.data/
 .zed/
+/docker-compose.yaml

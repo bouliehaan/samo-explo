@@ -1,0 +1,36 @@
+# Reference compose for the samo fork of Explo.
+#
+# `./deploy.sh` writes a real docker-compose.yaml from your answers and is the
+# supported path — it mints the samo token, works out the paths, and configures
+# slskd. This file is here for anyone who would rather wire it by hand.
+
+services:
+  explo:
+    image: ghcr.io/bouliehaan/samo-explo:latest
+    container_name: samo-explo
+    restart: unless-stopped
+    ports:
+      - "7288:7288"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    volumes:
+      - ./.env:/opt/explo/.env
+      # Must be the same path samo's explo folder points at.
+      - /path/to/musiclibrary/explo:/data/Weekly-Exploration
+      # - /path/to/slskd/downloads:/slskd/     # if using slskd
+      # - ./cookies.txt:/opt/explo/cookies.txt # optional, for yt-dlp
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC                # must match the timezone set in ListenBrainz
+      - WEB_UI=true
+      - UI_USERNAME=
+      - UI_PASSWORD=
+      - WEEKLY_EXPLORATION_SCHEDULE=15 00 * * 2
+      # --clean-downloads rotates the drop folder, which is what keeps samo's
+      # Explore playlist a "this week" queue instead of an ever-growing pile.
+      # It needs USE_SUBDIRECTORY=true in .env. Do NOT use --persist=false:
+      # in this codebase that flag is parsed and then never read.
+      - WEEKLY_EXPLORATION_FLAGS=--replace-playlist --clean-downloads
